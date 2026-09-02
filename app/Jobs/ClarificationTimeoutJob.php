@@ -31,7 +31,7 @@ class ClarificationTimeoutJob implements ShouldQueue
         ]);
         $telegram->sendMessage(
             $session->telegram_chat_id,
-            '<b>Clarification timed out.</b> Review the best-effort incident preview.',
+            "⏰ <b>زمان دریافت توضیح بیشتر تمام شد.</b>\n📋 پیش‌نمایش تقریبی گزارش را بررسی کنید.",
             $telegram->previewKeyboard($session->session_id)
         );
     }

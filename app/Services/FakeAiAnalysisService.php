@@ -16,14 +16,14 @@ class FakeAiAnalysisService implements AiIncidentAnalysisInterface
             : (str_contains($text, 'everyone') || str_contains($text, 'all users') ? 'system_wide' : 'unknown');
 
         return [
-            'title' => $scope === 'system_wide' ? 'System-wide customer incident' : 'Reported customer incident',
+            'title' => $scope === 'system_wide' ? 'گزارش اختلال سراسری سامانه' : 'گزارش مشکل مشتری',
             'summary' => trim($session->messages->pluck('content')->filter()->implode("\n")) ?: 'No textual details supplied.',
             'scope' => $scope,
             'category' => str_contains($text, 'payment') ? 'payments' : 'general',
             'priority' => str_contains($text, 'down') || str_contains($text, 'urgent') ? 'high' : 'normal',
             'sample_data' => ['message_count' => $session->messages->count()],
             'clarification_needed' => $needsClarification,
-            'clarification_question' => $needsClarification ? 'Is this affecting all users or only a specific user/account?' : null,
+            'clarification_question' => $needsClarification ? 'این مشکل برای همه کاربران رخ می‌دهد یا فقط یک کاربر/حساب خاص؟' : null,
         ];
     }
 }

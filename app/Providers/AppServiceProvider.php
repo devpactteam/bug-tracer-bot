@@ -12,7 +12,7 @@ class AppServiceProvider extends ServiceProvider
     public function register(): void
     {
         $this->app->bind(AiIncidentAnalysisInterface::class, function ($app): AiIncidentAnalysisInterface {
-            return config('incident.ai.driver') === 'openai'
+            return in_array(config('incident.ai.driver'), ['openai', 'gapgpt'], true)
                 ? $app->make(OpenAiAnalysisService::class)
                 : $app->make(FakeAiAnalysisService::class);
         });

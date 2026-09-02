@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
 
@@ -42,24 +43,44 @@ class TelegramBotService
         ]))->throw()->json();
     }
 
+    public function deleteMessage(string|int $chatId, string|int $messageId): array
+    {
+        return $this->client()->post('deleteMessage', [
+            'chat_id' => $chatId,
+            'message_id' => $messageId,
+        ])->throw()->json();
+    }
+
     public function answerCallbackQuery(string $callbackQueryId, string $text = ''): array
     {
-        return $this->client()->post('answerCallbackQuery', ['callback_query_id' => $callbackQueryId, 'text' => $text])->throw()->json();
+        try {
+            return $this->client()
+                ->post('answerCallbackQuery', ['callback_query_id' => $callbackQueryId, 'text' => $text])
+                ->throw()->json();
+        } catch (RequestException $exception) {
+            // A replayed/late callback can legitimately be rejected by Telegram.
+            if ($exception->response?->status() === 400
+                && str_contains((string) $exception->response?->json('description'), 'query is too old')) {
+                report($exception);
+                return ['ok' => false, 'description' => 'callback expired'];
+            }
+            throw $exception;
+        }
     }
 
     public function previewKeyboard(string $sessionId): array
     {
         return ['inline_keyboard' => [
-            [['text' => 'Approve & Create Ticket', 'callback_data' => "incident:approve:{$sessionId}"]],
-            [['text' => 'Change Assignee', 'callback_data' => "incident:assignee:{$sessionId}"]],
-            [['text' => 'Cancel', 'callback_data' => "incident:cancel:{$sessionId}"]],
+            [['text' => '✅ تأیید و ایجاد تیکت', 'callback_data' => "incident:approve:{$sessionId}"]],
+            [['text' => '👤 تغییر مسئول', 'callback_data' => "incident:assignee:{$sessionId}"]],
+            [['text' => '❌ لغو گزارش', 'callback_data' => "incident:cancel:{$sessionId}"]],
         ]];
     }
 
     public function finalizeKeyboard(string $sessionId): array
     {
         return ['inline_keyboard' => [
-            [['text' => 'Finalize & Analyze', 'callback_data' => "incident:finalize:{$sessionId}"]],
+            [['text' => '🚀 نهایی‌سازی و تحلیل', 'callback_data' => "incident:finalize:{$sessionId}"]],
         ]];
     }
 }

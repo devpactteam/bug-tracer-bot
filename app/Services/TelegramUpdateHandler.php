@@ -6,6 +6,7 @@ use App\Jobs\ProcessIncidentBundleJob;
 use App\Models\IncidentIntakeSession;
 use App\Models\ProcessedTelegramUpdate;
 use Illuminate\Database\QueryException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 
 class TelegramUpdateHandler
@@ -39,7 +40,7 @@ class TelegramUpdateHandler
         $chatId = (string) ($message['chat']['id'] ?? '');
         $text = trim((string) ($message['text'] ?? $message['caption'] ?? ''));
         if (strcasecmp($text, '/start') === 0) {
-            $this->telegram->sendMessage($chatId, 'Forward incident messages, then press <b>Finalize &amp; Analyze</b>.');
+            $this->telegram->sendMessage($chatId, '👋 سلام! پیام‌های مربوط به مشکل را فوروارد کنید 📩؛ سپس روی <b>🚀 نهایی‌سازی و تحلیل</b> بزنید.');
             return;
         }
         if (strcasecmp($text, '/finalize') === 0) {
@@ -54,7 +55,7 @@ class TelegramUpdateHandler
                 ->whereIn('status', ['awaiting_approval', 'collecting'])->latest('id')->first();
             if ($session) {
                 $session->update(['selected_assignee_id' => (int) $matches[1]]);
-                $this->telegram->sendMessage($chatId, 'Assignee updated.');
+                $this->telegram->sendMessage($chatId, '✅ مسئول تیکت با موفقیت تغییر کرد.');
             }
             return;
         }
@@ -66,11 +67,20 @@ class TelegramUpdateHandler
         }
         $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
         $session = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)->latest('id')->first();
-        $this->telegram->sendMessage(
-            $chatId,
-            'Message added. Continue forwarding or finalize when ready.',
-            $session ? $this->telegram->finalizeKeyboard($session->session_id) : null
-        );
+        // Avoid one bot reply per forwarded message. Keep a single finalize
+        // prompt for the first message in the current intake session.
+        if ($session && Cache::add("incident:finalize-prompt:{$session->session_id}", true, now()->addDay())) {
+            try {
+                $this->telegram->sendMessage(
+                    $chatId,
+                    '📥 پیام دریافت شد. پیام‌های بیشتری را فوروارد کنید؛ در پایان روی 🚀 <b>نهایی‌سازی و تحلیل</b> بزنید.',
+                    $this->telegram->finalizeKeyboard($session->session_id)
+                );
+            } catch (\Throwable $exception) {
+                Cache::forget("incident:finalize-prompt:{$session->session_id}");
+                throw $exception;
+            }
+        }
     }
 
     private function claimUpdate(int $updateId): bool
@@ -123,18 +133,62 @@ class TelegramUpdateHandler
 
         $action = $data[1] ?? '';
         if ($action === 'finalize' && $session->status === 'collecting') {
+            // Telegram callback queries expire quickly; acknowledge before
+            // starting synchronous analysis or dispatching a queue job.
+            $this->telegram->answerCallbackQuery($callback['id'], '⏳ تحلیل در حال آماده‌سازی است.');
+            $callbackMessage = $callback['message'] ?? [];
+            if (isset($callbackMessage['chat']['id'], $callbackMessage['message_id'])) {
+                try {
+                    $this->telegram->deleteMessage(
+                        $callbackMessage['chat']['id'],
+                        $callbackMessage['message_id']
+                    );
+                } catch (\Throwable $exception) {
+                    // Deletion may fail due to Telegram permissions or stale data.
+                    // The analysis must still continue for the operator.
+                    report($exception);
+                }
+            }
             $this->intake->finalize($sessionId);
-            $this->telegram->answerCallbackQuery($callback['id'], 'Analysis queued.');
         } elseif ($action === 'approve' && $session->status === 'awaiting_approval') {
+            $this->telegram->answerCallbackQuery($callback['id'], '📝 در حال ایجاد تیکت...');
             ProcessIncidentBundleJob::createTicket($sessionId);
-            $this->telegram->answerCallbackQuery($callback['id'], 'Ticket created.');
         } elseif ($action === 'cancel' && in_array($session->status, ['awaiting_approval', 'awaiting_clarification'], true)) {
+            $this->telegram->answerCallbackQuery($callback['id'], '🗑️ گزارش لغو شد.');
             $session->update(['status' => 'cancelled']);
-            $this->telegram->answerCallbackQuery($callback['id'], 'Incident cancelled.');
+            $this->deleteSessionMessages($session, $callback['message'] ?? []);
         } elseif ($action === 'assignee') {
-            $this->telegram->answerCallbackQuery($callback['id'], 'Send the assignee ID in chat.');
+            $this->telegram->answerCallbackQuery($callback['id'], '👤 شناسه مسئول را با دستور /assignee ارسال کنید.');
         } else {
-            $this->telegram->answerCallbackQuery($callback['id'], 'This action is no longer available.');
+            $this->telegram->answerCallbackQuery($callback['id'], '⚠️ این گزینه دیگر قابل استفاده نیست.');
+        }
+    }
+
+    /**
+     * Remove the bot preview and forwarded messages belonging to a cancelled
+     * session. Telegram can reject individual deletions (for example in a
+     * group without rights), so each deletion is intentionally best-effort.
+     */
+    private function deleteSessionMessages(IncidentIntakeSession $session, array $callbackMessage): void
+    {
+        $chatId = $session->telegram_chat_id;
+
+        if (isset($callbackMessage['chat']['id'], $callbackMessage['message_id'])
+            && (string) $callbackMessage['chat']['id'] === (string) $chatId) {
+            $this->deleteTelegramMessage($chatId, $callbackMessage['message_id']);
+        }
+
+        $session->messages()->pluck('telegram_message_id')->each(
+            fn (string $messageId) => $this->deleteTelegramMessage($chatId, $messageId)
+        );
+    }
+
+    private function deleteTelegramMessage(string|int $chatId, string|int $messageId): void
+    {
+        try {
+            $this->telegram->deleteMessage($chatId, $messageId);
+        } catch (\Throwable $exception) {
+            report($exception);
         }
     }
 }

@@ -13,7 +13,7 @@ INCIDENT_AI_DRIVER=fake
 OPENAI_API_KEY=
 ```
 
-Run migrations and a queue worker in the normal Laravel way. Set `INCIDENT_AI_DRIVER=openai` to use the strict JSON OpenAI adapter; the default fake adapter is deterministic and supports edge-case prompts containing `[clarify]`, `not sure`, `everyone`, or `only me`.
+Run migrations and a queue worker in the normal Laravel way. Set `INCIDENT_AI_DRIVER=gapgpt` and provide `AI_API_KEY` to use the OpenAI-compatible GapGPT endpoint. The same adapter also supports `AI_API_BASE_URL=https://api.openai.com/v1`. The fake adapter is deterministic and supports edge-case prompts containing `[clarify]`, `not sure`, `everyone`, or `only me`.
 
 For production webhooks, configure Telegram with the same `TELEGRAM_WEBHOOK_SECRET`; requests with a mismatched `X-Telegram-Bot-Api-Secret-Token` are rejected. For local development, use `php artisan telegram:poll` and leave the webhook unset.
 

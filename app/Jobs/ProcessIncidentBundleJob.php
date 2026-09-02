@@ -23,20 +23,35 @@ class ProcessIncidentBundleJob implements ShouldQueue
     public int $tries = 3;
     public array $backoff = [10, 30, 120];
 
-    public function __construct(public readonly string $sessionId) {}
+    public function __construct(
+        public readonly string $sessionId,
+        public readonly bool $force = false,
+    ) {}
 
     public function handle(AiIncidentAnalysisInterface $ai, TelegramBotService $telegram): void
     {
+        $session = IncidentIntakeSession::query()->where('session_id', $this->sessionId)->first();
+        if (!$session || !in_array($session->status, ['collecting', 'analyzing'], true)) {
+            return;
+        }
+
+        $isFresh = $session->updated_at?->gt(
+            now()->subSeconds((int) config('incident.intake.debounce_seconds'))
+        );
+
+        // The sync driver executes a redispatch immediately. Never redispatch
+        // from inside the lock in that mode, otherwise it deadlocks itself.
+        if (!$this->force && $isFresh && config('queue.default') !== 'sync') {
+            self::dispatch($this->sessionId)
+                ->delay(now()->addSeconds((int) config('incident.intake.debounce_seconds')))
+                ->onQueue(config('incident.intake.queue'));
+            return;
+        }
+
         Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram): void {
             $session = IncidentIntakeSession::query()->with('messages')
                 ->where('session_id', $this->sessionId)->first();
             if (!$session || !in_array($session->status, ['collecting', 'analyzing'], true)) return;
-            if ($session->updated_at?->gt(now()->subSeconds((int) config('incident.intake.debounce_seconds')))) {
-                self::dispatch($this->sessionId)
-                    ->delay(now()->addSeconds((int) config('incident.intake.debounce_seconds')))
-                    ->onQueue(config('incident.intake.queue'));
-                return;
-            }
             $session->update(['status' => 'analyzing']);
             try {
                 $result = $ai->analyze($session->fresh('messages'));
@@ -45,7 +60,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 $session->update(['status' => 'collecting']);
                 $telegram->sendMessage(
                     $session->telegram_chat_id,
-                    'I could not analyze this bundle yet. Please finalize again in a moment.'
+                    '⚠️ تحلیل این مجموعه فعلاً انجام نشد. لطفاً چند لحظه بعد دوباره 🚀 نهایی‌سازی کنید.'
                 );
                 throw $exception;
             }
@@ -54,13 +69,16 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 'clarification_question' => $result['clarification_question'] ?? null,
                 'status' => $result['clarification_needed'] ? 'awaiting_clarification' : 'awaiting_approval',
             ]);
-            if ($result['clarification_needed']) {
+            // Delayed jobs are executed immediately by Laravel's sync driver,
+            // so do not schedule a timeout in local synchronous mode.
+            if ($result['clarification_needed'] && config('queue.default') !== 'sync') {
                 ClarificationTimeoutJob::dispatch($session->session_id)
-                    ->delay(now()->addMinutes((int) config('incident.intake.clarification_timeout_minutes')));
+                    ->delay(now()->addMinutes((int) config('incident.intake.clarification_timeout_minutes')))
+                    ->onQueue(config('incident.intake.queue'));
             }
             $text = $result['clarification_needed']
-                ? "<b>Clarification needed</b>\n".e($result['clarification_question'])
-                : "<b>Incident preview</b>\n<b>{$result['title']}</b>\n".e($result['summary']);
+                ? "🔎 <b>نیاز به توضیح بیشتر</b>\n💬 ".e($result['clarification_question'])
+                : "📋 <b>پیش‌نمایش گزارش</b>\n🏷️ <b>".e($result['title'])."</b>\n📝 ".e($result['summary']);
             $telegram->sendMessage($session->telegram_chat_id, $text, $result['clarification_needed'] ? null : $telegram->previewKeyboard($session->session_id));
         });
     }

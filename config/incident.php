@@ -28,7 +28,8 @@ return [
 
     'ai' => [
         'driver' => env('INCIDENT_AI_DRIVER', 'fake'),
-        'model' => env('OPENAI_MODEL', 'gpt-4o-mini'),
-        'api_key' => env('OPENAI_API_KEY'),
+        'base_url' => rtrim(env('AI_API_BASE_URL', 'https://api.openai.com/v1'), '/'),
+        'model' => env('AI_MODEL', 'gpt-4o-mini'),
+        'api_key' => env('AI_API_KEY'),
     ],
 ];

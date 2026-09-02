@@ -40,10 +40,6 @@ class IncidentIntakeService
                 );
                 $session->touch();
 
-                ProcessIncidentBundleJob::dispatch($session->session_id)
-                    ->delay(now()->addSeconds((int) config('incident.intake.debounce_seconds')))
-                    ->onQueue(config('incident.intake.queue'));
-
                 return $session->fresh('messages');
             });
         });
@@ -51,7 +47,7 @@ class IncidentIntakeService
 
     public function finalize(string $sessionId): void
     {
-        ProcessIncidentBundleJob::dispatch($sessionId)->onQueue(config('incident.intake.queue'));
+        ProcessIncidentBundleJob::dispatch($sessionId, true)->onQueue(config('incident.intake.queue'));
     }
 
     public function setStatus(string $sessionId, string $from, string $to): bool

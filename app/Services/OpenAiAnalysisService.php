@@ -13,7 +13,7 @@ class OpenAiAnalysisService implements AiIncidentAnalysisInterface
     {
         $apiKey = (string) config('incident.ai.api_key');
         if ($apiKey === '') {
-            throw new RuntimeException('OPENAI_API_KEY is not configured.');
+            throw new RuntimeException('AI_API_KEY is not configured.');
         }
 
         $messages = $session->messages->map(fn ($message): array => [
@@ -23,13 +23,18 @@ class OpenAiAnalysisService implements AiIncidentAnalysisInterface
         ])->values()->all();
 
         $system = <<<'PROMPT'
-You classify incident reports. Return ONLY valid JSON with exactly these keys:
+گزارش مشکل را تحلیل و دسته‌بندی کن. تمام متن‌های title، summary و clarification_question را فارسی بنویس.
+فقط JSON معتبر با دقیقاً کلیدهای زیر برگردان:
 title (string), summary (string), scope ("system_wide"|"user_specific"|"unknown"),
 category (string|null), priority ("low"|"normal"|"high"|"critical"), sample_data (object),
 clarification_needed (boolean), clarification_question (string|null).
 PROMPT;
 
-        $response = Http::withToken($apiKey)->timeout(30)->post('https://api.openai.com/v1/chat/completions', [
+        $response = Http::baseUrl(rtrim((string) config('incident.ai.base_url'), '/'))
+            ->withToken($apiKey)
+            ->acceptJson()
+            ->timeout(60)
+            ->post('chat/completions', [
             'model' => config('incident.ai.model'),
             'temperature' => 0,
             'response_format' => ['type' => 'json_object'],
