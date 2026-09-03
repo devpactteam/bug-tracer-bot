@@ -63,7 +63,10 @@ class TelegramUpdateHandler
         $awaiting = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)
             ->where('status', 'awaiting_clarification')->latest('id')->first();
         if ($awaiting && $text !== '') {
-            $awaiting->update(['status' => 'collecting', 'clarification_question' => null]);
+            $session = $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
+            ProcessIncidentBundleJob::dispatch($session->session_id, true, true)
+                ->onQueue(config('incident.intake.queue'));
+            return;
         }
         $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
         $session = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)->latest('id')->first();
@@ -71,11 +74,12 @@ class TelegramUpdateHandler
         // prompt for the first message in the current intake session.
         if ($session && Cache::add("incident:finalize-prompt:{$session->session_id}", true, now()->addDay())) {
             try {
-                $this->telegram->sendMessage(
+                $sentMessage = $this->telegram->sendMessage(
                     $chatId,
                     '📥 پیام دریافت شد. پیام‌های بیشتری را فوروارد کنید؛ در پایان روی 🚀 <b>نهایی‌سازی و تحلیل</b> بزنید.',
                     $this->telegram->finalizeKeyboard($session->session_id)
                 );
+                $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
             } catch (\Throwable $exception) {
                 Cache::forget("incident:finalize-prompt:{$session->session_id}");
                 throw $exception;
@@ -150,6 +154,12 @@ class TelegramUpdateHandler
                 }
             }
             $this->intake->finalize($sessionId);
+        } elseif ($action === 'clarifications'
+            && $session->status === 'awaiting_clarification'
+            && (($session->ai_analysis_result['clarification_ready_for_finalization'] ?? false) === true)) {
+            $this->telegram->answerCallbackQuery($callback['id'], '🧠 تحلیل نهایی در حال آماده‌سازی است.');
+            $this->deleteCallbackMessage($callback['message'] ?? []);
+            $this->intake->finalize($sessionId, true);
         } elseif ($action === 'approve' && $session->status === 'awaiting_approval') {
             $this->telegram->answerCallbackQuery($callback['id'], '📝 در حال ایجاد تیکت...');
             ProcessIncidentBundleJob::createTicket($sessionId);
@@ -181,6 +191,19 @@ class TelegramUpdateHandler
         $session->messages()->pluck('telegram_message_id')->each(
             fn (string $messageId) => $this->deleteTelegramMessage($chatId, $messageId)
         );
+
+        collect($session->telegram_bot_message_ids ?? [])->each(
+            fn (string $messageId) => $this->deleteTelegramMessage($chatId, $messageId)
+        );
+    }
+
+    private function deleteCallbackMessage(array $callbackMessage): void
+    {
+        if (!isset($callbackMessage['chat']['id'], $callbackMessage['message_id'])) {
+            return;
+        }
+
+        $this->deleteTelegramMessage($callbackMessage['chat']['id'], $callbackMessage['message_id']);
     }
 
     private function deleteTelegramMessage(string|int $chatId, string|int $messageId): void

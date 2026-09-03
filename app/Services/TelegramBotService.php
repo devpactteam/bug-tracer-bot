@@ -83,4 +83,12 @@ class TelegramBotService
             [['text' => '🚀 نهایی‌سازی و تحلیل', 'callback_data' => "incident:finalize:{$sessionId}"]],
         ]];
     }
+
+    public function clarificationCompleteKeyboard(string $sessionId): array
+    {
+        return ['inline_keyboard' => [
+            [['text' => '✅ ثبت توضیحات نهایی', 'callback_data' => "incident:clarifications:{$sessionId}"]],
+            [['text' => '❌ لغو گزارش', 'callback_data' => "incident:cancel:{$sessionId}"]],
+        ]];
+    }
 }

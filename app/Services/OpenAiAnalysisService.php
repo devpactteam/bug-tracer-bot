@@ -21,9 +21,15 @@ class OpenAiAnalysisService implements AiIncidentAnalysisInterface
             'media_type' => $message->media_type,
             'forward_origin' => $message->forward_origin_metadata,
         ])->values()->all();
+        $input = [
+            'messages' => $messages,
+            'previous_clarification_question' => $session->clarification_question,
+        ];
 
         $system = <<<'PROMPT'
 گزارش مشکل را تحلیل و دسته‌بندی کن. تمام متن‌های title، summary و clarification_question را فارسی بنویس.
+اگر previous_clarification_question وجود دارد، پاسخ جدید اپراتور را با آن بررسی کن و همان سؤال را تکرار نکن.
+اگر اطلاعات فعلی برای یک گزارش قابل پیگیری کافی است، clarification_needed را false قرار بده.
 فقط JSON معتبر با دقیقاً کلیدهای زیر برگردان:
 title (string), summary (string), scope ("system_wide"|"user_specific"|"unknown"),
 category (string|null), priority ("low"|"normal"|"high"|"critical"), sample_data (object),
@@ -40,7 +46,7 @@ PROMPT;
             'response_format' => ['type' => 'json_object'],
             'messages' => [
                 ['role' => 'system', 'content' => $system],
-                ['role' => 'user', 'content' => json_encode($messages, JSON_THROW_ON_ERROR)],
+                ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR)],
             ],
         ])->throw();
 

@@ -10,11 +10,28 @@ class IncidentIntakeSession extends Model
     protected $fillable = [
         'session_id', 'telegram_chat_id', 'operator_telegram_id', 'status',
         'ai_analysis_result', 'clarification_question', 'selected_assignee_id',
+        'telegram_bot_message_ids',
     ];
 
     protected function casts(): array
     {
-        return ['ai_analysis_result' => 'array'];
+        return [
+            'ai_analysis_result' => 'array',
+            'telegram_bot_message_ids' => 'array',
+        ];
+    }
+
+    public function rememberBotMessageId(int|string|null $messageId): void
+    {
+        if ($messageId === null) {
+            return;
+        }
+
+        $messageIds = array_values(array_unique([
+            ...($this->telegram_bot_message_ids ?? []),
+            (string) $messageId,
+        ]));
+        $this->update(['telegram_bot_message_ids' => $messageIds]);
     }
 
     public function messages(): HasMany

@@ -23,6 +23,7 @@ return [
     'intake' => [
         'debounce_seconds' => (int) env('INCIDENT_DEBOUNCE_SECONDS', 45),
         'clarification_timeout_minutes' => (int) env('INCIDENT_CLARIFICATION_TIMEOUT_MINUTES', 30),
+        'max_clarification_rounds' => (int) env('INCIDENT_MAX_CLARIFICATION_ROUNDS', 3),
         'queue' => env('INCIDENT_QUEUE', 'default'),
     ],
 

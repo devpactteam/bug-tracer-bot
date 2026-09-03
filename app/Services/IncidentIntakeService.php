@@ -45,9 +45,10 @@ class IncidentIntakeService
         });
     }
 
-    public function finalize(string $sessionId): void
+    public function finalize(string $sessionId, bool $finalizeClarifications = false): void
     {
-        ProcessIncidentBundleJob::dispatch($sessionId, true)->onQueue(config('incident.intake.queue'));
+        ProcessIncidentBundleJob::dispatch($sessionId, true, false, $finalizeClarifications)
+            ->onQueue(config('incident.intake.queue'));
     }
 
     public function setStatus(string $sessionId, string $from, string $to): bool

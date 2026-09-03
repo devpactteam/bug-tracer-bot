@@ -29,10 +29,11 @@ class ClarificationTimeoutJob implements ShouldQueue
             'clarification_question' => null,
             'status' => 'awaiting_approval',
         ]);
-        $telegram->sendMessage(
+        $sentMessage = $telegram->sendMessage(
             $session->telegram_chat_id,
             "⏰ <b>زمان دریافت توضیح بیشتر تمام شد.</b>\n📋 پیش‌نمایش تقریبی گزارش را بررسی کنید.",
             $telegram->previewKeyboard($session->session_id)
         );
+        $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
     }
 }

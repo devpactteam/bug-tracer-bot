@@ -26,12 +26,17 @@ class ProcessIncidentBundleJob implements ShouldQueue
     public function __construct(
         public readonly string $sessionId,
         public readonly bool $force = false,
+        public readonly bool $clarificationCheck = false,
+        public readonly bool $finalizeClarifications = false,
     ) {}
 
     public function handle(AiIncidentAnalysisInterface $ai, TelegramBotService $telegram): void
     {
+        $allowedStatuses = ($this->clarificationCheck || $this->finalizeClarifications)
+            ? ['awaiting_clarification']
+            : ['collecting', 'analyzing'];
         $session = IncidentIntakeSession::query()->where('session_id', $this->sessionId)->first();
-        if (!$session || !in_array($session->status, ['collecting', 'analyzing'], true)) {
+        if (!$session || !in_array($session->status, $allowedStatuses, true)) {
             return;
         }
 
@@ -48,22 +53,64 @@ class ProcessIncidentBundleJob implements ShouldQueue
             return;
         }
 
-        Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram): void {
+        Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram, $allowedStatuses): void {
             $session = IncidentIntakeSession::query()->with('messages')
                 ->where('session_id', $this->sessionId)->first();
-            if (!$session || !in_array($session->status, ['collecting', 'analyzing'], true)) return;
+            if (!$session || !in_array($session->status, $allowedStatuses, true)) return;
+            $previousStatus = $session->status;
             $session->update(['status' => 'analyzing']);
             try {
                 $result = $ai->analyze($session->fresh('messages'));
             } catch (Throwable $exception) {
                 report($exception);
-                $session->update(['status' => 'collecting']);
+                $session->update(['status' => $previousStatus]);
                 $telegram->sendMessage(
                     $session->telegram_chat_id,
                     '⚠️ تحلیل این مجموعه فعلاً انجام نشد. لطفاً چند لحظه بعد دوباره 🚀 نهایی‌سازی کنید.'
                 );
                 throw $exception;
             }
+            $previousAnalysis = $session->ai_analysis_result ?? [];
+            $round = (int) ($previousAnalysis['clarification_round'] ?? 0);
+            $previousQuestion = $session->clarification_question;
+            $newQuestion = $result['clarification_question'] ?? null;
+            $isRepeatedQuestion = $this->clarificationCheck
+                && is_string($previousQuestion)
+                && $previousQuestion !== ''
+                && is_string($newQuestion)
+                && $this->normalizeQuestion($previousQuestion) === $this->normalizeQuestion($newQuestion);
+
+            if ($result['clarification_needed']) {
+                $round++;
+                $result['clarification_round'] = $round;
+            }
+
+            // Do not trap the operator in a loop when an AI provider repeats
+            // the same question or exceeds the configured clarification limit.
+            if ($this->clarificationCheck && (
+                $isRepeatedQuestion
+                || $round >= (int) config('incident.intake.max_clarification_rounds')
+            )) {
+                $result['clarification_needed'] = false;
+                $result['clarification_question'] = null;
+            }
+            if (!$result['clarification_needed'] && $this->clarificationCheck) {
+                $result['clarification_ready_for_finalization'] = true;
+                $session->update([
+                    'ai_analysis_result' => $result,
+                    'clarification_question' => null,
+                    'status' => 'awaiting_clarification',
+                ]);
+                $sentMessage = $telegram->sendMessage(
+                    $session->telegram_chat_id,
+                    '✅ <b>توضیحات کافی دریافت شد.</b>'."\n"
+                    .'برای دریافت تحلیل نهایی، روی دکمه زیر بزنید.',
+                    $telegram->clarificationCompleteKeyboard($session->session_id)
+                );
+                $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
+                return;
+            }
+
             $session->update([
                 'ai_analysis_result' => $result,
                 'clarification_question' => $result['clarification_question'] ?? null,
@@ -79,7 +126,12 @@ class ProcessIncidentBundleJob implements ShouldQueue
             $text = $result['clarification_needed']
                 ? "🔎 <b>نیاز به توضیح بیشتر</b>\n💬 ".e($result['clarification_question'])
                 : "📋 <b>پیش‌نمایش گزارش</b>\n🏷️ <b>".e($result['title'])."</b>\n📝 ".e($result['summary']);
-            $telegram->sendMessage($session->telegram_chat_id, $text, $result['clarification_needed'] ? null : $telegram->previewKeyboard($session->session_id));
+            $sentMessage = $telegram->sendMessage(
+                $session->telegram_chat_id,
+                $text,
+                $result['clarification_needed'] ? null : $telegram->previewKeyboard($session->session_id)
+            );
+            $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
         });
     }
 
@@ -104,5 +156,10 @@ class ProcessIncidentBundleJob implements ShouldQueue
             $session->update(['status' => 'completed']);
             return $ticket;
         });
+    }
+
+    private function normalizeQuestion(string $question): string
+    {
+        return preg_replace('/\s+/u', ' ', trim(mb_strtolower($question))) ?? '';
     }
 }
