@@ -38,4 +38,9 @@ class IncidentIntakeSession extends Model
     {
         return $this->hasMany(IntakeMessage::class, 'session_id', 'session_id');
     }
+
+    public function aiAnalysisLogs(): HasMany
+    {
+        return $this->hasMany(AiIncidentAnalysisLog::class, 'session_id', 'session_id');
+    }
 }

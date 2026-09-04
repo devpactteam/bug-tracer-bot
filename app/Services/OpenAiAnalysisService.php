@@ -4,18 +4,18 @@ namespace App\Services;
 
 use App\Contracts\AiIncidentAnalysisInterface;
 use App\Models\IncidentIntakeSession;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use RuntimeException;
+use Throwable;
 
 class OpenAiAnalysisService implements AiIncidentAnalysisInterface
 {
-    public function analyze(IncidentIntakeSession $session): array
+    public function __construct(private readonly AiAnalysisAuditLogger $auditLogger) {}
+
+    public function analyze(IncidentIntakeSession $session, string $phase = 'initial'): array
     {
         $apiKey = (string) config('incident.ai.api_key');
-        if ($apiKey === '') {
-            throw new RuntimeException('AI_API_KEY is not configured.');
-        }
-
         $messages = $session->messages->map(fn ($message): array => [
             'content' => $message->content,
             'media_type' => $message->media_type,
@@ -36,11 +36,8 @@ category (string|null), priority ("low"|"normal"|"high"|"critical"), sample_data
 clarification_needed (boolean), clarification_question (string|null).
 PROMPT;
 
-        $response = Http::baseUrl(rtrim((string) config('incident.ai.base_url'), '/'))
-            ->withToken($apiKey)
-            ->acceptJson()
-            ->timeout(60)
-            ->post('chat/completions', [
+        $baseUrl = rtrim((string) config('incident.ai.base_url'), '/');
+        $requestBody = [
             'model' => config('incident.ai.model'),
             'temperature' => 0,
             'response_format' => ['type' => 'json_object'],
@@ -48,17 +45,58 @@ PROMPT;
                 ['role' => 'system', 'content' => $system],
                 ['role' => 'user', 'content' => json_encode($input, JSON_THROW_ON_ERROR)],
             ],
-        ])->throw();
+        ];
+        $startedAt = hrtime(true);
+        $log = $this->auditLogger->start($session, $phase, (string) config('incident.ai.driver'), (string) config('incident.ai.model'), [
+            'endpoint' => "{$baseUrl}/chat/completions",
+            'body' => $requestBody,
+        ]);
+        $response = null;
 
-        $content = $response->json('choices.0.message.content');
-        $result = json_decode((string) $content, true, 512, JSON_THROW_ON_ERROR);
-        $required = ['title', 'summary', 'scope', 'category', 'priority', 'sample_data', 'clarification_needed', 'clarification_question'];
-        foreach ($required as $key) {
-            if (!array_key_exists($key, $result)) {
-                throw new RuntimeException("AI response missing key: {$key}");
+        try {
+            if ($apiKey === '') {
+                throw new RuntimeException('AI_API_KEY is not configured.');
             }
-        }
 
-        return $result;
+            $response = Http::baseUrl($baseUrl)
+                ->withToken($apiKey)
+                ->acceptJson()
+                ->timeout(60)
+                ->post('chat/completions', $requestBody)
+                ->throw();
+
+            $content = $response->json('choices.0.message.content');
+            $result = json_decode((string) $content, true, 512, JSON_THROW_ON_ERROR);
+            $required = ['title', 'summary', 'scope', 'category', 'priority', 'sample_data', 'clarification_needed', 'clarification_question'];
+            foreach ($required as $key) {
+                if (!array_key_exists($key, $result)) {
+                    throw new RuntimeException("AI response missing key: {$key}");
+                }
+            }
+
+            $this->auditLogger->succeed(
+                $log,
+                $this->responsePayload($response),
+                $result,
+                $startedAt
+            );
+
+            return $result;
+        } catch (Throwable $exception) {
+            $this->auditLogger->fail(
+                $log,
+                $exception,
+                $startedAt,
+                $response ? $this->responsePayload($response) : null
+            );
+            throw $exception;
+        }
+    }
+
+    private function responsePayload(Response $response): array
+    {
+        $payload = $response->json();
+
+        return is_array($payload) ? $payload : ['body' => $response->body()];
     }
 }

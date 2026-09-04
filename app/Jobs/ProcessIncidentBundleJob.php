@@ -60,7 +60,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
             $previousStatus = $session->status;
             $session->update(['status' => 'analyzing']);
             try {
-                $result = $ai->analyze($session->fresh('messages'));
+                $result = $ai->analyze($session->fresh('messages'), $this->analysisPhase());
             } catch (Throwable $exception) {
                 report($exception);
                 $session->update(['status' => $previousStatus]);
@@ -161,5 +161,14 @@ class ProcessIncidentBundleJob implements ShouldQueue
     private function normalizeQuestion(string $question): string
     {
         return preg_replace('/\s+/u', ' ', trim(mb_strtolower($question))) ?? '';
+    }
+
+    private function analysisPhase(): string
+    {
+        return match (true) {
+            $this->finalizeClarifications => 'final',
+            $this->clarificationCheck => 'clarification',
+            default => 'initial',
+        };
     }
 }
