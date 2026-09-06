@@ -19,7 +19,9 @@ class ClarificationTimeoutJob implements ShouldQueue
     public function handle(TelegramBotService $telegram): void
     {
         $session = IncidentIntakeSession::query()->where('session_id', $this->sessionId)->first();
-        if (!$session || $session->status !== 'awaiting_clarification') return;
+        if (! $session || $session->status !== 'awaiting_clarification') {
+            return;
+        }
 
         $analysis = $session->ai_analysis_result ?? [];
         $analysis['clarification_needed'] = false;

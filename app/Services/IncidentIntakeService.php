@@ -20,7 +20,7 @@ class IncidentIntakeService
                     ->whereIn('status', ['collecting', 'awaiting_clarification'])
                     ->latest('id')->first();
 
-                if (!$session) {
+                if (! $session) {
                     $session = IncidentIntakeSession::create([
                         'session_id' => (string) Str::uuid(),
                         'telegram_chat_id' => (string) $chatId,

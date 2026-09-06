@@ -20,3 +20,9 @@ For production webhooks, configure Telegram with the same `TELEGRAM_WEBHOOK_SECR
 The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTProxy is an MTProto transport, not an HTTP/SOCKS proxy, so it cannot be passed directly to Laravel's HTTP Bot API client. To route Bot API calls through it, install a local MTProxy-to-HTTP/SOCKS bridge and set `TELEGRAM_HTTP_PROXY` (for example, `socks5h://127.0.0.1:1080`).
 
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
+
+## Assignees & the second (ticket delivery) bot
+
+- Team members live in `support_users` (seed via `php artisan db:seed --class=SupportUserSeeder`, add more via `php artisan support-user:add`). Each user carries the problem categories they cover (`categories_covered`), whether they can be an assignee (`can_be_assignee`), and `auto_assign_on_mention` (report mentions → auto-assign, used for the project manager).
+- The AI analysis returns a problem `category` plus `responsible_side` (`client`/`backend`/`null`). When a category/side maps to an assignable user, that user is pre-selected; if nothing matches, the operator must pick an assignee before the ticket can be approved.
+- Finished tickets are delivered to the assigned user through a **second Telegram bot** (`ASSIGNEE_BOT_TOKEN`), long-polled the same way as the main bot via `php artisan telegram:poll-assignee`. To receive tickets, each assignee must `/start` that bot; the poll loop captures their numeric chat id onto `support_users.assignee_chat_id`, then tickets are sent there with the full analysis and sample data.

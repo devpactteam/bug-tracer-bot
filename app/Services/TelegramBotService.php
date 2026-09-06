@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\SupportUser;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -62,6 +63,7 @@ class TelegramBotService
             if ($exception->response?->status() === 400
                 && str_contains((string) $exception->response?->json('description'), 'query is too old')) {
                 report($exception);
+
                 return ['ok' => false, 'description' => 'callback expired'];
             }
             throw $exception;
@@ -72,9 +74,48 @@ class TelegramBotService
     {
         return ['inline_keyboard' => [
             [['text' => '✅ تأیید و ایجاد تیکت', 'callback_data' => "incident:approve:{$sessionId}"]],
+            [['text' => '📝 ثبت توضیحات بیشتر', 'callback_data' => "incident:clarify:{$sessionId}"]],
             [['text' => '👤 تغییر مسئول', 'callback_data' => "incident:assignee:{$sessionId}"]],
             [['text' => '❌ لغو گزارش', 'callback_data' => "incident:cancel:{$sessionId}"]],
         ]];
+    }
+
+    /**
+     * Build the preview message text. The assignee is always shown (either the
+     * selected one or a notice to pick one before approving).
+     */
+    public static function previewText(array $result, ?SupportUser $assignee, ?SupportUser $suggested = null): string
+    {
+        $text = "📋 <b>پیش‌نمایش گزارش</b>\n"
+            .'🏷️ <b>'.e($result['title'])."</b>\n"
+            .'📝 '.e($result['summary']);
+
+        if ($assignee) {
+            $text .= "\n\n👤 مسئول: <b>".e($assignee->name).'</b>'.$assignee->taggingText();
+        } elseif ($suggested) {
+            $text .= "\n\n👤 مسئول پیشنهادی (تأیید/تغییر): <b>".e($suggested->name).'</b>'.$suggested->taggingText();
+        } else {
+            $text .= "\n\n⚠️ <b>مسئولی انتخاب نشده است.</b> برای ثبت تیکت، ابتدا «تغییر مسئول» را بزنید.";
+        }
+
+        return $text;
+    }
+
+    /**
+     * Inline keyboard listing the assignable users with their covered
+     * categories. Each button dispatches incident:assignee:pick.
+     */
+    public function assigneeListKeyboard(string $sessionId, iterable $users): array
+    {
+        $rows = [];
+        foreach ($users as $user) {
+            $rows[] = [[
+                'text' => '👤 '.$user->name.' ('.$user->coveredCategoryLabelText().')',
+                'callback_data' => "incident:assignee:pick:{$sessionId}:{$user->id}",
+            ]];
+        }
+
+        return ['inline_keyboard' => $rows];
     }
 
     public function finalizeKeyboard(string $sessionId): array

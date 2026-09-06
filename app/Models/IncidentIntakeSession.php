@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class IncidentIntakeSession extends Model
@@ -10,7 +11,7 @@ class IncidentIntakeSession extends Model
     protected $fillable = [
         'session_id', 'telegram_chat_id', 'operator_telegram_id', 'status',
         'ai_analysis_result', 'clarification_question', 'selected_assignee_id',
-        'telegram_bot_message_ids',
+        'ai_suggested_assignee_id', 'preview_message_id', 'telegram_bot_message_ids',
     ];
 
     protected function casts(): array
@@ -37,6 +38,16 @@ class IncidentIntakeSession extends Model
     public function messages(): HasMany
     {
         return $this->hasMany(IntakeMessage::class, 'session_id', 'session_id');
+    }
+
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(SupportUser::class, 'selected_assignee_id');
+    }
+
+    public function suggestedAssignee(): BelongsTo
+    {
+        return $this->belongsTo(SupportUser::class, 'ai_suggested_assignee_id');
     }
 
     public function aiAnalysisLogs(): HasMany

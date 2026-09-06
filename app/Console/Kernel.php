@@ -12,7 +12,5 @@ class Kernel extends ConsoleKernel
         TelegramPollCommand::class,
     ];
 
-    protected function schedule(Schedule $schedule): void
-    {
-    }
+    protected function schedule(Schedule $schedule): void {}
 }

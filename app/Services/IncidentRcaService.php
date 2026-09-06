@@ -23,6 +23,7 @@ class IncidentRcaService
                 'resolved_at' => now(),
                 'status' => 'resolved',
             ]);
+
             return $ticket->refresh();
         });
     }

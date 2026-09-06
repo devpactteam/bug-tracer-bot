@@ -5,6 +5,8 @@ namespace App\Jobs;
 use App\Contracts\AiIncidentAnalysisInterface;
 use App\Models\IncidentIntakeSession;
 use App\Models\IncidentTicket;
+use App\Models\SupportUser;
+use App\Services\AssigneeNotificationService;
 use App\Services\TelegramBotService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -21,6 +23,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
     public int $tries = 3;
+
     public array $backoff = [10, 30, 120];
 
     public function __construct(
@@ -36,7 +39,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
             ? ['awaiting_clarification']
             : ['collecting', 'analyzing'];
         $session = IncidentIntakeSession::query()->where('session_id', $this->sessionId)->first();
-        if (!$session || !in_array($session->status, $allowedStatuses, true)) {
+        if (! $session || ! in_array($session->status, $allowedStatuses, true)) {
             return;
         }
 
@@ -46,17 +49,20 @@ class ProcessIncidentBundleJob implements ShouldQueue
 
         // The sync driver executes a redispatch immediately. Never redispatch
         // from inside the lock in that mode, otherwise it deadlocks itself.
-        if (!$this->force && $isFresh && config('queue.default') !== 'sync') {
+        if (! $this->force && $isFresh && config('queue.default') !== 'sync') {
             self::dispatch($this->sessionId)
                 ->delay(now()->addSeconds((int) config('incident.intake.debounce_seconds')))
                 ->onQueue(config('incident.intake.queue'));
+
             return;
         }
 
         Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram, $allowedStatuses): void {
             $session = IncidentIntakeSession::query()->with('messages')
                 ->where('session_id', $this->sessionId)->first();
-            if (!$session || !in_array($session->status, $allowedStatuses, true)) return;
+            if (! $session || ! in_array($session->status, $allowedStatuses, true)) {
+                return;
+            }
             $previousStatus = $session->status;
             $session->update(['status' => 'analyzing']);
             try {
@@ -94,7 +100,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 $result['clarification_needed'] = false;
                 $result['clarification_question'] = null;
             }
-            if (!$result['clarification_needed'] && $this->clarificationCheck) {
+            if (! $result['clarification_needed'] && $this->clarificationCheck) {
                 $result['clarification_ready_for_finalization'] = true;
                 $session->update([
                     'ai_analysis_result' => $result,
@@ -108,7 +114,24 @@ class ProcessIncidentBundleJob implements ShouldQueue
                     $telegram->clarificationCompleteKeyboard($session->session_id)
                 );
                 $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
+
                 return;
+            }
+
+            // Pre-select an assignee when the report explicitly mentions a user
+            // flagged with auto_assign_on_mention (e.g. the project manager).
+            // Otherwise fall back to the assignee suggested by the AI based on
+            // the problem category / responsible side.
+            if (! $result['clarification_needed'] && ! $session->selected_assignee_id) {
+                $mentioned = SupportUser::autoAssignFromText($session->messages);
+                $suggested = SupportUser::resolveSuggested($result);
+                if ($suggested) {
+                    $session->update(['ai_suggested_assignee_id' => $suggested->id]);
+                }
+                $assignee = $mentioned ?? $suggested;
+                if ($assignee) {
+                    $session->update(['selected_assignee_id' => $assignee->id]);
+                }
             }
 
             $session->update([
@@ -123,23 +146,38 @@ class ProcessIncidentBundleJob implements ShouldQueue
                     ->delay(now()->addMinutes((int) config('incident.intake.clarification_timeout_minutes')))
                     ->onQueue(config('incident.intake.queue'));
             }
+            $assignee = $session->fresh('assignee')->assignee;
+            $suggested = $assignee ? null : $session->fresh('suggestedAssignee')->suggestedAssignee;
             $text = $result['clarification_needed']
                 ? "🔎 <b>نیاز به توضیح بیشتر</b>\n💬 ".e($result['clarification_question'])
-                : "📋 <b>پیش‌نمایش گزارش</b>\n🏷️ <b>".e($result['title'])."</b>\n📝 ".e($result['summary']);
+                : TelegramBotService::previewText($result, $assignee, $suggested);
             $sentMessage = $telegram->sendMessage(
                 $session->telegram_chat_id,
                 $text,
                 $result['clarification_needed'] ? null : $telegram->previewKeyboard($session->session_id)
             );
             $session->rememberBotMessageId($sentMessage['result']['message_id'] ?? null);
+            if (! $result['clarification_needed'] && ($sentMessage['result']['message_id'] ?? null)) {
+                $session->update(['preview_message_id' => $sentMessage['result']['message_id']]);
+            }
         });
     }
 
+    /**
+     * Create the ticket only when an assignee is set. Returns null (and does
+     * not create the ticket) when no assignee has been chosen, so the operator
+     * is prompted to pick one before approval can complete.
+     */
     public static function createTicket(string $sessionId): ?IncidentTicket
     {
-        return DB::transaction(function () use ($sessionId): ?IncidentTicket {
+        $ticket = DB::transaction(function () use ($sessionId): ?IncidentTicket {
             $session = IncidentIntakeSession::query()->where('session_id', $sessionId)->lockForUpdate()->first();
-            if (!$session || $session->status !== 'awaiting_approval' || IncidentTicket::query()->where('session_id', $sessionId)->exists()) return null;
+            if (! $session || $session->status !== 'awaiting_approval' || IncidentTicket::query()->where('session_id', $sessionId)->exists()) {
+                return null;
+            }
+            if (config('incident.intake.require_assignee_before_approval') && ! $session->selected_assignee_id) {
+                return null;
+            }
             $a = $session->ai_analysis_result ?? [];
             $ticket = IncidentTicket::create([
                 'ticket_number' => 'INC-'.strtoupper(Str::random(8)),
@@ -154,8 +192,19 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 'status' => 'open',
             ]);
             $session->update(['status' => 'completed']);
+
             return $ticket;
         });
+
+        if ($ticket) {
+            try {
+                app(AssigneeNotificationService::class)->notifyAssignee($ticket, $ticket->assignee);
+            } catch (Throwable $exception) {
+                report($exception);
+            }
+        }
+
+        return $ticket;
     }
 
     private function normalizeQuestion(string $question): string

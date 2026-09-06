@@ -2,17 +2,17 @@
 
 namespace App\Console\Commands;
 
-use App\Services\TelegramUpdateHandler;
+use App\Services\AssigneeNotificationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
-class TelegramPollCommand extends Command
+class TelegramPollAssigneeCommand extends Command
 {
-    protected $signature = 'telegram:poll {--once : Process one getUpdates request}';
+    protected $signature = 'telegram:poll-assignee {--once : Process one getUpdates request}';
 
-    protected $description = 'Long-poll Telegram updates for local development.';
+    protected $description = 'Long-poll the assignee bot (captures /start chat ids and delivers tickets).';
 
-    public function handle(TelegramUpdateHandler $handler): int
+    public function handle(AssigneeNotificationService $notification): int
     {
         $offset = 0;
         $running = true;
@@ -25,20 +25,21 @@ class TelegramPollCommand extends Command
             });
         }
         while ($running) {
-            $request = Http::baseUrl(rtrim(config('incident.telegram.api_base_url'), '/').'/bot'.config('incident.telegram.bot_token').'/')
-                ->timeout((int) config('incident.telegram.poll_timeout') + 10)
+            $request = Http::baseUrl(rtrim(config('incident.assignee_bot.api_base_url'), '/')
+                .'/bot'.config('incident.assignee_bot.token').'/')
+                ->timeout((int) config('incident.assignee_bot.poll_timeout') + 10)
                 ->when(
-                    filled(config('incident.telegram.proxy.http_bridge')),
-                    fn ($http) => $http->withOptions(['proxy' => config('incident.telegram.proxy.http_bridge')])
+                    filled(config('incident.assignee_bot.proxy.http_bridge')),
+                    fn ($http) => $http->withOptions(['proxy' => config('incident.assignee_bot.proxy.http_bridge')])
                 );
             $response = $request->get('getUpdates', [
                 'offset' => $offset,
-                'limit' => config('incident.telegram.poll_limit'),
-                'timeout' => config('incident.telegram.poll_timeout'),
+                'limit' => config('incident.assignee_bot.poll_limit'),
+                'timeout' => config('incident.assignee_bot.poll_timeout'),
             ])->throw();
             foreach ($response->json('result', []) as $update) {
                 $offset = max($offset, ((int) ($update['update_id'] ?? 0)) + 1);
-                $handler->handle($update);
+                $notification->registerFromUpdate($update);
                 if (function_exists('pcntl_signal')) {
                     pcntl_signal_dispatch();
                 }

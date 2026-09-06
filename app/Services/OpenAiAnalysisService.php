@@ -16,23 +16,47 @@ class OpenAiAnalysisService implements AiIncidentAnalysisInterface
     public function analyze(IncidentIntakeSession $session, string $phase = 'initial'): array
     {
         $apiKey = (string) config('incident.ai.api_key');
-        $messages = $session->messages->map(fn ($message): array => [
-            'content' => $message->content,
-            'media_type' => $message->media_type,
-            'forward_origin' => $message->forward_origin_metadata,
-        ])->values()->all();
+        $allMessages = $session->messages;
+        $messageCount = $allMessages->count();
+        $messages = $allMessages->map(function ($message, int $index): array {
+            $isForwarded = $message->forward_origin_metadata !== null;
+            $role = $isForwarded ? 'گزارش فوروارد شده' : 'پاسخ اپراتور';
+
+            return [
+                'index' => $index + 1,
+                'role' => $role,
+                'content' => $message->content,
+                'media_type' => $message->media_type,
+                'forward_origin' => $message->forward_origin_metadata,
+            ];
+        })->values()->all();
         $input = [
             'messages' => $messages,
             'previous_clarification_question' => $session->clarification_question,
         ];
 
         $system = <<<'PROMPT'
-گزارش مشکل را تحلیل و دسته‌بندی کن. تمام متن‌های title، summary و clarification_question را فارسی بنویس.
-اگر previous_clarification_question وجود دارد، پاسخ جدید اپراتور را با آن بررسی کن و همان سؤال را تکرار نکن.
-اگر اطلاعات فعلی برای یک گزارش قابل پیگیری کافی است، clarification_needed را false قرار بده.
-فقط JSON معتبر با دقیقاً کلیدهای زیر برگردان:
+تو یک دستیار تحلیل گزارش مشکل هستی. پیام‌هایی که دریافت می‌کنی ترکیبی از:
+1. پیام‌های با role="گزارش فوروارد شده" — این‌ها گزارش‌های اصلی مشکل از مشتری هستند.
+2. پیام‌های با role="پاسخ اپراتور" — این‌ها توضیحات تکمیلی اپراتور در پاسخ به سوالات قبلی هستند.
+
+وظیفه تو:
+- همه پیام‌ها (هم گزارش‌ها و هم پاسخ‌های اپراتور) را با هم تحلیل کن و یک گزارش جامع بساز.
+- اگر previous_clarification_question مقدار دارد، پاسخ اپراتور (role="پاسخ اپراتور") را به عنوان پاسخ به آن سوال در نظر بگیر و همان سوال را دوباره نپرس.
+- اگر با اطلاعات فعلی (گزارش‌ها + پاسخ‌های اپراتور) می‌توان یک گزارش قابل پیگیری ساخت، clarification_needed را false قرار بده.
+- تمام متن‌های title، summary و clarification_question را فارسی بنویس.
+
+قوانین حیاتی:
+- اطلاعات شناسایی مشتری (کد ملی، شماره موبایل، شماره حساب/کارت/شبا، آدرس، شناسه سفارش/کاربر و هر مقدار منحصربه‌فرد دیگر) را هرگز حذف، خلاصه یا تغییر نده.
+- این مقادیر را به‌صورت دقیق (عیناً همان‌طور که در گزارش آمده) در کلید sample_data قرار بده و اگر به تشخیص علت مشکل مربوط است، در summary هم ذکر کن.
+- sample_data می‌تواند شامل همه‌ی فیلدهای خامی باشد که برای دیباگ (تکرار مجدد خطا به‌واسطه آن داده‌ها) لازم است.
+- category را اگر بتوانی از فهرست `client`، `backend`، `system_analysis`، `database`، `payment`، `network`، `performance`، `account`، `other` انتخاب کن؛ در غیر این صورت آزادانه توصیف کن.
+- responsible_side را بر اساسِ مسوولِ احتمالی مشکل تعیین کن: «client» اگر مشکلِ سمتِ کلاینت/فرانت‌اند باشد، «backend» اگر سمتِ سرور/بک‌اند باشد. اگر واقعاً غیرقابل تشخیص بود null بگذار و هرگز حدس نزن.
+
+فقط JSON معتبر با کلیدهای زیر برگردان:
 title (string), summary (string), scope ("system_wide"|"user_specific"|"unknown"),
-category (string|null), priority ("low"|"normal"|"high"|"critical"), sample_data (object),
+category (string|null), responsible_side ("client"|"backend"|null),
+priority ("low"|"normal"|"high"|"critical"), sample_data (object),
 clarification_needed (boolean), clarification_question (string|null).
 PROMPT;
 
@@ -67,9 +91,9 @@ PROMPT;
 
             $content = $response->json('choices.0.message.content');
             $result = json_decode((string) $content, true, 512, JSON_THROW_ON_ERROR);
-            $required = ['title', 'summary', 'scope', 'category', 'priority', 'sample_data', 'clarification_needed', 'clarification_question'];
+            $required = ['title', 'summary', 'scope', 'category', 'responsible_side', 'priority', 'sample_data', 'clarification_needed', 'clarification_question'];
             foreach ($required as $key) {
-                if (!array_key_exists($key, $result)) {
+                if (! array_key_exists($key, $result)) {
                     throw new RuntimeException("AI response missing key: {$key}");
                 }
             }

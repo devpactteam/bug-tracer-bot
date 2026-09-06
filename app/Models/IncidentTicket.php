@@ -26,4 +26,9 @@ class IncidentTicket extends Model
     {
         return $this->belongsTo(IncidentIntakeSession::class, 'session_id', 'session_id');
     }
+
+    public function assignee(): BelongsTo
+    {
+        return $this->belongsTo(SupportUser::class, 'assignee_id');
+    }
 }
