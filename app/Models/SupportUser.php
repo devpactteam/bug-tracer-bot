@@ -4,14 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
 class SupportUser extends Model
 {
     protected $fillable = [
         'telegram_id', 'username', 'name', 'role',
-        'categories_covered', 'can_be_assignee', 'auto_assign_on_mention', 'is_active',
-        'assignee_chat_id',
+        'categories_covered', 'can_be_assignee', 'auto_assign_on_mention',
+        'is_default_assignee', 'is_active',
+        'assignee_chat_id', 'avatar_path',
     ];
 
     protected function casts(): array
@@ -22,6 +24,7 @@ class SupportUser extends Model
             'categories_covered' => 'array',
             'can_be_assignee' => 'boolean',
             'auto_assign_on_mention' => 'boolean',
+            'is_default_assignee' => 'boolean',
             'is_active' => 'boolean',
         ];
     }
@@ -34,6 +37,23 @@ class SupportUser extends Model
     public function scopeAssignable(Builder $query): Builder
     {
         return $query->where('can_be_assignee', true)->where('is_active', true);
+    }
+
+    public function assignedTickets(): HasMany
+    {
+        return $this->hasMany(IncidentTicket::class, 'assignee_id');
+    }
+
+    /**
+     * Public URL of the uploaded avatar, or null when none is set.
+     */
+    public function avatarUrl(): ?string
+    {
+        if ($this->avatar_path === null || $this->avatar_path === '') {
+            return null;
+        }
+
+        return asset('storage/avatars/'.basename($this->avatar_path));
     }
 
     /**
@@ -102,7 +122,10 @@ class SupportUser extends Model
             }
         }
 
-        return null;
+        // The AI could not determine an assignee: fall back to the configured
+        // default assignee (the project manager) instead of leaving the ticket
+        // without one.
+        return self::query()->assignable()->where('is_default_assignee', true)->first();
     }
 
     /**

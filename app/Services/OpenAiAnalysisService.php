@@ -50,7 +50,7 @@ class OpenAiAnalysisService implements AiIncidentAnalysisInterface
 - اطلاعات شناسایی مشتری (کد ملی، شماره موبایل، شماره حساب/کارت/شبا، آدرس، شناسه سفارش/کاربر و هر مقدار منحصربه‌فرد دیگر) را هرگز حذف، خلاصه یا تغییر نده.
 - این مقادیر را به‌صورت دقیق (عیناً همان‌طور که در گزارش آمده) در کلید sample_data قرار بده و اگر به تشخیص علت مشکل مربوط است، در summary هم ذکر کن.
 - sample_data می‌تواند شامل همه‌ی فیلدهای خامی باشد که برای دیباگ (تکرار مجدد خطا به‌واسطه آن داده‌ها) لازم است.
-- category را اگر بتوانی از فهرست `client`، `backend`، `system_analysis`، `database`، `payment`، `network`، `performance`، `account`، `other` انتخاب کن؛ در غیر این صورت آزادانه توصیف کن.
+- category را اگر بتوانی از فهرست `client`، `backend`، `system_analysis`، `database`، `payment`، `network`، `performance`، `account`، `processmaker`، `other` انتخاب کن؛ در غیر این صورت آزادانه توصیف کن.
 - responsible_side را بر اساسِ مسوولِ احتمالی مشکل تعیین کن: «client» اگر مشکلِ سمتِ کلاینت/فرانت‌اند باشد، «backend» اگر سمتِ سرور/بک‌اند باشد. اگر واقعاً غیرقابل تشخیص بود null بگذار و هرگز حدس نزن.
 
 فقط JSON معتبر با کلیدهای زیر برگردان:
@@ -85,7 +85,7 @@ PROMPT;
             $response = Http::baseUrl($baseUrl)
                 ->withToken($apiKey)
                 ->acceptJson()
-                ->timeout(60)
+                ->timeout((int) config('incident.ai.timeout', 300))
                 ->post('chat/completions', $requestBody)
                 ->throw();
 

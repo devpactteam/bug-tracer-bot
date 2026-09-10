@@ -2,18 +2,23 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\MaybeSendsMorningReminder;
 use App\Services\AssigneeNotificationService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
 class TelegramPollAssigneeCommand extends Command
 {
+    use MaybeSendsMorningReminder;
+
     protected $signature = 'telegram:poll-assignee {--once : Process one getUpdates request}';
 
     protected $description = 'Long-poll the assignee bot (captures /start chat ids and delivers tickets).';
 
     public function handle(AssigneeNotificationService $notification): int
     {
+        $this->maybeSendMorningReminder();
+
         $offset = 0;
         $running = true;
         if (function_exists('pcntl_signal')) {
@@ -39,7 +44,11 @@ class TelegramPollAssigneeCommand extends Command
             ])->throw();
             foreach ($response->json('result', []) as $update) {
                 $offset = max($offset, ((int) ($update['update_id'] ?? 0)) + 1);
-                $notification->registerFromUpdate($update);
+                try {
+                    $notification->handleUpdate($update);
+                } catch (Throwable $exception) {
+                    report($exception);
+                }
                 if (function_exists('pcntl_signal')) {
                     pcntl_signal_dispatch();
                 }

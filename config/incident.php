@@ -51,6 +51,7 @@ return [
         'base_url' => rtrim(env('AI_API_BASE_URL', 'https://api.openai.com/v1'), '/'),
         'model' => env('AI_MODEL', 'gpt-4o-mini'),
         'api_key' => env('AI_API_KEY'),
+        'timeout' => (int) env('AI_TIMEOUT', 300),
     ],
 
     // Problem-category taxonomy used to describe which categories each support
@@ -64,6 +65,7 @@ return [
         'network' => ['label' => 'شبکه'],
         'performance' => ['label' => 'عملکرد'],
         'account' => ['label' => 'اکانت / ورود'],
+        'processmaker' => ['label' => 'پراسس میکر'],
         'other' => ['label' => 'سایر'],
     ],
 ];

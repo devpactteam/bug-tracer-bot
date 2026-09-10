@@ -70,6 +70,51 @@ class TelegramBotService
         }
     }
 
+    /**
+     * Resolve a Telegram file_id to its download path (getFile). Returns null
+     * when the file cannot be resolved.
+     */
+    public function getFile(string $fileId): ?string
+    {
+        try {
+            $filePath = $this->client()
+                ->post('getFile', ['file_id' => $fileId])
+                ->throw()->json('result.file_path');
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
+
+        return is_string($filePath) ? $filePath : null;
+    }
+
+    /**
+     * Download a file previously resolved via getFile() as raw bytes. Returns
+     * null when the download fails.
+     */
+    public function downloadFile(string $filePath): ?string
+    {
+        $token = (string) config('incident.telegram.bot_token');
+        $url = rtrim((string) config('incident.telegram.api_base_url'), '/')."/file/bot{$token}/{$filePath}";
+
+        $request = Http::withOptions(['timeout' => 60]);
+        $bridge = config('incident.telegram.proxy.http_bridge');
+        if (is_string($bridge) && $bridge !== '') {
+            $request = $request->withOptions(['proxy' => $bridge]);
+        }
+
+        try {
+            $response = $request->get($url);
+        } catch (\Throwable $exception) {
+            report($exception);
+
+            return null;
+        }
+
+        return $response->successful() ? $response->body() : null;
+    }
+
     public function previewKeyboard(string $sessionId): array
     {
         return ['inline_keyboard' => [

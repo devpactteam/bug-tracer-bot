@@ -1,8 +1,29 @@
 <?php
 
+use App\Http\Controllers\Panel\IntakeSessionPanelController;
+use App\Http\Controllers\Panel\SupportUserController;
+use App\Http\Controllers\Panel\TicketPanelController;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => response()->json([
     'app' => config('app.name'),
     'status' => 'ok',
+    'panel' => url('/panel'),
 ]));
+
+Route::prefix('panel')->name('panel.')->group(function (): void {
+    Route::get('/', [TicketPanelController::class, 'index'])->name('index');
+    Route::get('/report', [TicketPanelController::class, 'report'])->name('report');
+    Route::get('/sessions', [IntakeSessionPanelController::class, 'index'])->name('sessions.index');
+    Route::post('/sessions/{session}/close', [IntakeSessionPanelController::class, 'close'])->name('sessions.close');
+    Route::get('/tickets/{ticket}', [TicketPanelController::class, 'show'])->name('tickets.show');
+    Route::post('/tickets/{ticket}/close', [TicketPanelController::class, 'close'])->name('tickets.close');
+
+    Route::get('/users', [SupportUserController::class, 'index'])->name('users.index');
+    Route::get('/users/create', [SupportUserController::class, 'create'])->name('users.create');
+    Route::post('/users', [SupportUserController::class, 'store'])->name('users.store');
+    Route::get('/users/{user}/edit', [SupportUserController::class, 'edit'])->name('users.edit');
+    Route::put('/users/{user}', [SupportUserController::class, 'update'])->name('users.update');
+    Route::delete('/users/{user}', [SupportUserController::class, 'destroy'])->name('users.destroy');
+    Route::post('/users/{user}/avatar', [SupportUserController::class, 'updateAvatar'])->name('users.avatar');
+});

@@ -2,18 +2,23 @@
 
 namespace App\Console\Commands;
 
+use App\Console\Commands\Concerns\MaybeSendsMorningReminder;
 use App\Services\TelegramUpdateHandler;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
 
 class TelegramPollCommand extends Command
 {
+    use MaybeSendsMorningReminder;
+
     protected $signature = 'telegram:poll {--once : Process one getUpdates request}';
 
     protected $description = 'Long-poll Telegram updates for local development.';
 
     public function handle(TelegramUpdateHandler $handler): int
     {
+        $this->maybeSendMorningReminder();
+
         $offset = 0;
         $running = true;
         if (function_exists('pcntl_signal')) {

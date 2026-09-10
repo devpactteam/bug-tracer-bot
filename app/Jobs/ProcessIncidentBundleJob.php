@@ -72,7 +72,8 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 $session->update(['status' => $previousStatus]);
                 $telegram->sendMessage(
                     $session->telegram_chat_id,
-                    '⚠️ تحلیل این مجموعه فعلاً انجام نشد. لطفاً چند لحظه بعد دوباره 🚀 نهایی‌سازی کنید.'
+                    '⚠️ تحلیل این مجموعه فعلاً انجام نشد. لطفاً چند لحظه بعد دوباره روی دکمه زیر بزنید.',
+                    $telegram->finalizeKeyboard($session->session_id)
                 );
                 throw $exception;
             }
@@ -191,6 +192,7 @@ class ProcessIncidentBundleJob implements ShouldQueue
                 'assignee_id' => $session->selected_assignee_id,
                 'status' => 'open',
             ]);
+            $ticket->log('created', 'تیکت جدید ثبت شد', 'سیستم', null, $ticket->assignee?->name);
             $session->update(['status' => 'completed']);
 
             return $ticket;

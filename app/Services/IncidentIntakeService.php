@@ -7,10 +7,16 @@ use App\Models\IncidentIntakeSession;
 use App\Models\IntakeMessage;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Throwable;
 
 class IncidentIntakeService
 {
+    public function __construct(
+        private readonly TelegramBotService $telegram,
+    ) {}
+
     public function appendMessage(array $message, string|int $chatId, string|int $operatorId): IncidentIntakeSession
     {
         return Cache::lock("incident-intake:{$chatId}", 10)->block(5, function () use ($message, $chatId, $operatorId): IncidentIntakeSession {
@@ -29,7 +35,7 @@ class IncidentIntakeService
                     ]);
                 }
 
-                IntakeMessage::query()->firstOrCreate(
+                $message = IntakeMessage::query()->firstOrCreate(
                     ['session_id' => $session->session_id, 'telegram_message_id' => (string) ($message['message_id'] ?? Str::uuid())],
                     [
                         'content' => $message['content'] ?? null,
@@ -38,11 +44,36 @@ class IncidentIntakeService
                         'forward_origin_metadata' => $message['forward_origin_metadata'] ?? null,
                     ]
                 );
+                if ($message->media_type === 'photo' && $message->media_file_id !== null && $message->media_local_path === null) {
+                    $this->storePhoto($message);
+                }
                 $session->touch();
 
                 return $session->fresh('messages');
             });
         });
+    }
+
+    /**
+     * Download the photo behind a forwarded message and persist it on the
+     * public disk so it can be delivered to the assignee with the ticket.
+     * Failures are reported but never block message intake.
+     */
+    private function storePhoto(IntakeMessage $message): void
+    {
+        try {
+            $filePath = $this->telegram->getFile($message->media_file_id);
+            $bytes = is_string($filePath) ? $this->telegram->downloadFile($filePath) : null;
+            if (! is_string($bytes) || $bytes === '') {
+                return;
+            }
+            $extension = strtolower((string) pathinfo($filePath, PATHINFO_EXTENSION)) ?: 'jpg';
+            $relative = 'ticket-photos/'.$message->session_id.'/'.(int) $message->telegram_message_id.'.'.$extension;
+            Storage::disk('public')->put($relative, $bytes);
+            $message->update(['media_local_path' => $relative]);
+        } catch (Throwable $exception) {
+            report($exception);
+        }
     }
 
     public function finalize(string $sessionId, bool $finalizeClarifications = false): void

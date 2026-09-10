@@ -62,7 +62,7 @@ class TelegramUpdateHandler
 
         $awaiting = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)
             ->where('status', 'awaiting_clarification')->latest('id')->first();
-        if ($awaiting && $text !== '') {
+        if ($awaiting && ($text !== '' || isset($message['photo']))) {
             $session = $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
             ProcessIncidentBundleJob::dispatch($session->session_id, true, true)
                 ->onQueue(config('incident.intake.queue'));
@@ -357,7 +357,7 @@ class TelegramUpdateHandler
             $session->update(['preview_message_id' => null]);
         }
 
-        if ($session->fresh('status') === 'awaiting_approval') {
+        if ($session->status === 'awaiting_approval') {
             $analysis = $session->ai_analysis_result ?? [];
             $text = TelegramBotService::previewText($analysis, $user, null);
             $sentMessage = $this->telegram->sendMessage(

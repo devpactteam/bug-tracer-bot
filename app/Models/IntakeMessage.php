@@ -9,7 +9,7 @@ class IntakeMessage extends Model
 {
     protected $fillable = [
         'session_id', 'telegram_message_id', 'content', 'media_type',
-        'media_file_id', 'forward_origin_metadata',
+        'media_file_id', 'media_local_path', 'forward_origin_metadata',
     ];
 
     protected function casts(): array
