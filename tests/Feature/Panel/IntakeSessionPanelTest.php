@@ -5,13 +5,9 @@ namespace Tests\Feature\Panel;
 use App\Models\IncidentIntakeSession;
 use App\Models\IntakeMessage;
 use App\Services\TelegramBotService;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 
-class IntakeSessionPanelTest extends TestCase
+class IntakeSessionPanelTest extends PanelTestCase
 {
-    use RefreshDatabase;
-
     private function makeSession(string $id, string $status): IncidentIntakeSession
     {
         return IncidentIntakeSession::query()->create([

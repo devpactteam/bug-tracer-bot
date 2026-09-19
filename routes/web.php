@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\IntakeSessionPanelController;
 use App\Http\Controllers\Panel\SupportUserController;
 use App\Http\Controllers\Panel\TicketPanelController;
+use App\Http\Middleware\EnsureSupportUserIsActive;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', fn () => response()->json([
@@ -11,7 +13,13 @@ Route::get('/', fn () => response()->json([
     'panel' => url('/panel'),
 ]));
 
-Route::prefix('panel')->name('panel.')->group(function (): void {
+Route::middleware('guest:web')->group(function (): void {
+    Route::get('/panel/login', [AuthController::class, 'create'])->name('login');
+    Route::post('/panel/login', [AuthController::class, 'store'])->middleware('throttle:20,1')->name('panel.login');
+});
+
+Route::prefix('panel')->name('panel.')->middleware(['auth:web', EnsureSupportUserIsActive::class, 'auth.session'])->group(function (): void {
+    Route::post('/logout', [AuthController::class, 'destroy'])->name('logout');
     Route::get('/', [TicketPanelController::class, 'index'])->name('index');
     Route::get('/report', [TicketPanelController::class, 'report'])->name('report');
     Route::get('/sessions', [IntakeSessionPanelController::class, 'index'])->name('sessions.index');

@@ -21,6 +21,18 @@ The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTPro
 
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
 
+## Panel login
+
+The panel at `/panel` requires an active support user to sign in at `/panel/login` with their Telegram username and password. Usernames are case-insensitive and an optional leading `@` is accepted. All active users retain access to the existing panel features.
+
+After updating, run `php artisan migrate`. Existing and seeded users have no password until one is explicitly assigned; no shared default password is created. Set the first user's password from the terminal:
+
+```sh
+php artisan support-user:password USERNAME
+```
+
+The command prompts privately for the new password and its confirmation and also works for password recovery. Once signed in, assign passwords to the remaining users under **کاربران → ویرایش**. New users require a confirmed password of at least 8 characters (at most 72 UTF-8 bytes). Leaving the password blank while editing a user with an existing password preserves it. `php artisan support-user:add` also asks for a password. Passwords are hashed and never displayed in the panel; repeated failed login attempts are limited. Disabling a user blocks both login and subsequent authenticated requests; changing a password invalidates their other panel sessions on their next request.
+
 ## Assignees & the second (ticket delivery) bot
 
 - Team members live in `support_users` (seed via `php artisan db:seed --class=SupportUserSeeder`, add more via `php artisan support-user:add`). Each user carries the problem categories they cover (`categories_covered`), whether they can be an assignee (`can_be_assignee`), and `auto_assign_on_mention` (report mentions → auto-assign, used for the project manager).

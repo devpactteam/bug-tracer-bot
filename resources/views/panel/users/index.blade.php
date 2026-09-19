@@ -38,8 +38,11 @@
                             @if (! $user->is_active)
                                 <span class="badge neutral">غیرفعال</span>
                             @endif
+                            @if (! $user->password)
+                                <span class="badge priority-high">نیازمند تنظیم رمز</span>
+                            @endif
                         </td>
-                        <td><code>@{{ $user->username }}</code></td>
+                        <td><code>{{ '@'.$user->username }}</code></td>
                         <td>{{ $roles[$user->role] ?? $user->role }}</td>
                         <td style="font-size:.8rem; color:var(--muted)">
                             @if ($user->categories_covered === null)

@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\SupportUser;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Validator;
 
 class AddSupportUserCommand extends Command
 {
@@ -22,7 +23,26 @@ class AddSupportUserCommand extends Command
             return self::FAILURE;
         }
 
-        $user->username = ltrim((string) $this->ask('یوزرنیم تلگرام (بدون @)', ''), '@');
+        $user->username = mb_strtolower(ltrim(trim((string) $this->ask('یوزرنیم تلگرام (بدون @)', '')), '@'));
+        if ($user->username === '' || mb_strlen($user->username) > 190 || SupportUser::query()->whereRaw('LOWER(username) = ?', [$user->username])->exists()) {
+            $this->error('یوزرنیم باید غیرخالی، حداکثر ۱۹۰ کاراکتر و یکتا باشد.');
+
+            return self::FAILURE;
+        }
+
+        $password = $this->secret('رمز عبور (حداقل ۸ کاراکتر)');
+        $confirmation = $this->secret('تکرار رمز عبور');
+        $validator = Validator::make([
+            'password' => $password,
+            'password_confirmation' => $confirmation,
+        ], ['password' => ['required', 'string', 'min:8', 'max:72', 'confirmed']]);
+        if ($validator->fails() || strlen((string) $password) > 72 || str_contains((string) $password, "\0")) {
+            $this->error('رمز عبور باید حداقل ۸ کاراکتر و حداکثر ۷۲ بایت باشد و با تکرار آن مطابقت داشته باشد.');
+
+            return self::FAILURE;
+        }
+        $user->password = $password;
+
         $user->role = (string) $this->choice('نقش', [
             'frontend_developer' => 'دولوپر فرانت‌اند',
             'backend_developer' => 'دولوپر بک‌اند',

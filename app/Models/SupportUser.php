@@ -3,22 +3,25 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Collection;
 
-class SupportUser extends Model
+class SupportUser extends Authenticatable
 {
     protected $fillable = [
         'telegram_id', 'username', 'name', 'role',
         'categories_covered', 'can_be_assignee', 'auto_assign_on_mention',
         'is_default_assignee', 'is_active',
-        'assignee_chat_id', 'avatar_path',
+        'assignee_chat_id', 'avatar_path', 'password',
     ];
+
+    protected $hidden = ['password', 'remember_token'];
 
     protected function casts(): array
     {
         return [
+            'password' => 'hashed',
             'telegram_id' => 'integer',
             'assignee_chat_id' => 'integer',
             'categories_covered' => 'array',

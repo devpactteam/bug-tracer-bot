@@ -147,7 +147,7 @@
         .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 18px; }
         @media (max-width: 760px) { .form-grid { grid-template-columns: 1fr; } }
         .field label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 6px; font-weight: 600; }
-        .field input[type="text"], .field input[type="number"], .field select, .field textarea {
+        .field input[type="text"], .field input[type="number"], .field input[type="password"], .field select, .field textarea {
             width: 100%; padding: 9px 12px;
             border: 1px solid var(--border); border-radius: 10px;
             font-family: inherit; background: var(--surface);
@@ -275,12 +275,19 @@
         <img src="{{ asset('amptrace-logo.png') }}" alt="{{ config('app.name') }}">
         پنل تیکت‌های {{ config('app.name') }}
     </div>
-    <nav>
+    @auth('web')
+    <nav style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
         <a href="{{ route('panel.index') }}">📋 لیست تیکت‌ها</a>
         <a href="{{ route('panel.sessions.index') }}">🧩 سشن‌ها</a>
         <a href="{{ route('panel.report') }}">📊 گزارش</a>
         <a href="{{ route('panel.users.index') }}">👥 کاربران</a>
+        <span>{{ auth('web')->user()->name }}</span>
+        <form method="POST" action="{{ route('panel.logout') }}">
+            @csrf
+            <button type="submit" class="btn btn-ghost btn-sm">خروج</button>
+        </form>
     </nav>
+    @endauth
 </header>
 
 <main>

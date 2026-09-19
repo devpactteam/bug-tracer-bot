@@ -4,6 +4,7 @@
 
 @php
     $isEdit = $user !== null;
+    $needsPassword = ! $isEdit || ! $user->password;
     $defaultCategories = $isEdit ? ($user->categories_covered ?? []) : null;
     $oldOr = function (string $key, bool $default): bool {
         $sent = old($key);
@@ -36,8 +37,20 @@
                 <div class="field">
                     <label for="username">یوزرنیم تلگرام *</label>
                     <input type="text" id="username" name="username" value="{{ old('username', $user->username ?? '') }}" placeholder="example_user" required>
-                    <div class="hint">بدون علامت @ — در صورت نیاز می‌توان از پیشوند بات استفاده کرد.</div>
+                    <div class="hint">بدون علامت @؛ از همین یوزرنیم برای ورود به پنل استفاده می‌شود.</div>
                     @error('username')<div class="hint" style="color:var(--red)">{{ $message }}</div>@enderror
+                </div>
+
+                <div class="field">
+                    <label for="password">{{ $needsPassword ? 'رمز عبور *' : 'رمز عبور جدید (اختیاری)' }}</label>
+                    <input type="password" id="password" name="password" dir="ltr" autocomplete="new-password" minlength="8" maxlength="72" @required($needsPassword)>
+                    <div class="hint">حداقل ۸ کاراکتر. {{ $needsPassword ? '' : 'برای حفظ رمز فعلی، این فیلد را خالی بگذارید.' }}</div>
+                    @error('password')<div class="hint" style="color:var(--red)">{{ $message }}</div>@enderror
+                </div>
+
+                <div class="field">
+                    <label for="password_confirmation">تکرار رمز عبور</label>
+                    <input type="password" id="password_confirmation" name="password_confirmation" dir="ltr" autocomplete="new-password" minlength="8" maxlength="72" @required($needsPassword)>
                 </div>
 
                 <div class="field">
@@ -103,12 +116,11 @@
                                     <div class="avatar placeholder">👤</div>
                                 @endif
                             </div>
-                            <form method="POST" action="{{ route('panel.users.avatar', $user) }}" enctype="multipart/form-data">
-                                @csrf
-                                <input type="file" name="avatar" accept="image/*" required>
+                            <div>
+                                <input type="file" name="avatar" accept="image/*" form="avatar-form" required>
                                 <div class="hint" style="color:var(--red)">{{ $errors->first('avatar') }}</div>
-                                <button type="submit" class="btn btn-primary btn-sm" style="margin-top:8px">📷 بارگذاری عکس</button>
-                            </form>
+                                <button type="submit" form="avatar-form" class="btn btn-primary btn-sm" style="margin-top:8px">📷 بارگذاری عکس</button>
+                            </div>
                         </div>
                     </div>
                 @endif
@@ -119,5 +131,10 @@
                 <a href="{{ route('panel.users.index') }}" class="btn btn-ghost">انصراف</a>
             </div>
         </form>
+        @if ($isEdit)
+            <form id="avatar-form" method="POST" action="{{ route('panel.users.avatar', $user) }}" enctype="multipart/form-data">
+                @csrf
+            </form>
+        @endif
     </div>
 @endsection

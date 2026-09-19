@@ -4,13 +4,9 @@ namespace Tests\Feature\Panel;
 
 use App\Models\IncidentIntakeSession;
 use App\Models\IncidentTicket;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tests\TestCase;
 
-class TicketPanelCloseTest extends TestCase
+class TicketPanelCloseTest extends PanelTestCase
 {
-    use RefreshDatabase;
-
     private function makeSession(string $sessionId): IncidentIntakeSession
     {
         return IncidentIntakeSession::query()->create([

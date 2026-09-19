@@ -5,15 +5,11 @@ namespace Tests\Feature\Panel;
 use App\Models\IncidentIntakeSession;
 use App\Models\IncidentTicket;
 use App\Models\SupportUser;
-use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
-use Tests\TestCase;
 
-class ReportTest extends TestCase
+class ReportTest extends PanelTestCase
 {
-    use RefreshDatabase;
-
     private function makeUser(): SupportUser
     {
         return SupportUser::query()->create([

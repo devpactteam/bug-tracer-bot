@@ -114,9 +114,20 @@ class SupportUserController extends Controller
      */
     private function validatedPayload(Request $request, ?SupportUser $user = null): array
     {
+        if (is_string($request->input('username'))) {
+            $request->merge(['username' => mb_strtolower(ltrim(trim($request->input('username')), '@'))]);
+        }
+
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:190'],
-            'username' => ['required', 'string', 'max:190', function ($attribute, $value, $fail) use ($user): void {
+            'password' => ['bail', $user === null || ! $user->password ? 'required' : 'nullable', 'string', 'min:8', 'max:72', 'confirmed', function ($attribute, $value, $fail): void {
+                if (str_contains($value, "\0")) {
+                    $fail('رمز عبور دارای کاراکتر نامعتبر است.');
+                } elseif (strlen($value) > 72) {
+                    $fail('حجم رمز عبور باید حداکثر ۷۲ بایت باشد؛ برای حروف فارسی رمز کوتاه‌تری انتخاب کنید.');
+                }
+            }],
+            'username' => ['bail', 'required', 'string', 'max:190', function ($attribute, $value, $fail) use ($user): void {
                 $normalized = mb_strtolower(ltrim($value, '@'));
                 $exists = SupportUser::query()
                     ->whereRaw('LOWER(username) = ?', [$normalized])
@@ -131,12 +142,18 @@ class SupportUserController extends Controller
             'assignee_chat_id' => ['nullable', 'integer'],
             'categories' => ['nullable', 'array'],
             'categories.*' => ['string', 'in:'.implode(',', array_keys(config('incident.categories')))],
+        ], [
+            'password.required' => 'رمز عبور را وارد کنید.',
+            'password.min' => 'رمز عبور باید حداقل ۸ کاراکتر باشد.',
+            'password.max' => 'رمز عبور باید حداکثر ۷۲ کاراکتر باشد.',
+            'password.confirmed' => 'تکرار رمز عبور مطابقت ندارد.',
         ]);
 
         $selected = $validated['categories'] ?? [];
         $coverAll = $request->boolean('cover_all_categories') || $selected === [];
 
         return [
+            ...(! empty($validated['password']) ? ['password' => $validated['password']] : []),
             'name' => $validated['name'],
             'username' => mb_strtolower(ltrim($validated['username'], '@')),
             'role' => $validated['role'],
