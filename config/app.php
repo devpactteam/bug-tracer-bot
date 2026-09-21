@@ -56,6 +56,26 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | HTTPS
+    |--------------------------------------------------------------------------
+    |
+    | Production deployments should have a TLS certificate at the web server
+    | or reverse proxy. The panel then redirects HTTP page loads before a
+    | password form is rendered and refuses HTTP form submissions.
+    |
+    */
+
+    'force_https' => env('APP_FORCE_HTTPS', env('APP_ENV') === 'production'),
+
+    'https_hsts_max_age' => (int) env('HTTPS_HSTS_MAX_AGE', 0),
+
+    'trusted_proxies' => array_values(array_filter(array_map(
+        'trim',
+        explode(',', (string) env('TRUSTED_PROXIES', '')),
+    ))),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Timezone
     |--------------------------------------------------------------------------
     |

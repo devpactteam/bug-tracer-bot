@@ -4,6 +4,7 @@ return [
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
+        'relay_auth_secret' => env('TELEGRAM_RELAY_AUTH_SECRET'),
         'api_base_url' => env('TELEGRAM_API_BASE_URL', 'https://api.telegram.org'),
         'proxy' => [
             'type' => env('TELEGRAM_PROXY_TYPE'),

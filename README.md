@@ -17,6 +17,29 @@ Run migrations and a queue worker in the normal Laravel way. Set `INCIDENT_AI_DR
 
 For production webhooks, configure Telegram with the same `TELEGRAM_WEBHOOK_SECRET`; requests with a mismatched `X-Telegram-Bot-Api-Secret-Token` are rejected. For local development, use `php artisan telegram:poll` and leave the webhook unset.
 
+### Intermediary webhook server
+
+The standalone file [deployment/telegram-webhook-relay.php](deployment/telegram-webhook-relay.php) lets Telegram call an HTTPS server that can reach the Laravel server. Upload only this file to the intermediary server; it requires PHP with cURL and a valid TLS certificate. Configure these environment variables on that server:
+
+```dotenv
+AMPTRACE_LARAVEL_WEBHOOK_URL=https://your-app.example.com/api/telegram/webhook
+AMPTRACE_TELEGRAM_WEBHOOK_SECRET=same-secret-as-TELEGRAM_WEBHOOK_SECRET
+AMPTRACE_RELAY_AUTH_SECRET=a-second-private-secret
+```
+
+Set Telegram's webhook to the public URL of the uploaded relay file. The relay verifies Telegram's `X-Telegram-Bot-Api-Secret-Token`, validates the JSON update, forwards it to Laravel, and returns a failure status when Laravel is unreachable so Telegram retries delivery. Telegram requires an HTTPS webhook URL; the secret token is the documented header sent with every webhook request. citeturn0search0turn0search1
+
+Example setup:
+
+```sh
+curl -sS -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=https://relay.example.com/telegram-webhook-relay.php" \
+  -d "secret_token=$TELEGRAM_WEBHOOK_SECRET" \
+  -d 'allowed_updates=["message","callback_query"]'
+```
+
+If `AMPTRACE_RELAY_AUTH_SECRET` is configured, add the same value to Laravel as `TELEGRAM_RELAY_AUTH_SECRET`; Laravel will require the relay authorization header as well as Telegram's secret-token header. Do not put the bot token in the relay filename or query string.
+
 The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTProxy is an MTProto transport, not an HTTP/SOCKS proxy, so it cannot be passed directly to Laravel's HTTP Bot API client. To route Bot API calls through it, install a local MTProxy-to-HTTP/SOCKS bridge and set `TELEGRAM_HTTP_PROXY` (for example, `socks5h://127.0.0.1:1080`).
 
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
@@ -24,6 +47,19 @@ The `incident_tickets` table contains the RCA fields (`root_cause_category`, `ro
 ## Panel login
 
 The panel at `/panel` requires an active support user to sign in at `/panel/login` with their Telegram username and password. Usernames are case-insensitive and an optional leading `@` is accepted. All active users retain access to the existing panel features.
+
+### HTTPS in production
+
+The login page must be served through HTTPS. Install a valid TLS certificate on the public web server or reverse proxy, set `APP_URL` to the public `https://` URL, and set these production variables:
+
+```dotenv
+APP_FORCE_HTTPS=true
+SESSION_SECURE_COOKIE=true
+HTTPS_HSTS_MAX_AGE=31536000
+TRUSTED_PROXIES=PROXY_IP_OR_CIDR
+```
+
+Use the actual reverse-proxy address or CIDR for `TRUSTED_PROXIES`; leave it empty when TLS terminates directly in PHP/Nginx. The app redirects insecure page requests before the login form is shown and rejects insecure form submissions. Local development on `http://localhost` keeps working when `APP_FORCE_HTTPS=false`.
 
 After updating, run `php artisan migrate`. Existing and seeded users have no password until one is explicitly assigned; no shared default password is created. Set the first user's password from the terminal:
 

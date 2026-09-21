@@ -14,6 +14,14 @@ class TelegramWebhookController extends Controller
         if ($secret && ! hash_equals((string) $secret, (string) $request->header('X-Telegram-Bot-Api-Secret-Token'))) {
             abort(403);
         }
+
+        $relaySecret = config('incident.telegram.relay_auth_secret');
+        if ($relaySecret && ! hash_equals(
+            (string) $relaySecret,
+            (string) preg_replace('/^Bearer\s+/i', '', (string) $request->header('X-AMPTrace-Relay-Authorization')),
+        )) {
+            abort(403);
+        }
         $handler->handle($request->json()->all());
 
         return response()->json(['ok' => true]);
