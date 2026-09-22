@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\SupportUser;
+use App\Services\Concerns\SendsTelegramViaGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
@@ -10,6 +11,8 @@ use RuntimeException;
 
 class TelegramBotService
 {
+    use SendsTelegramViaGateway;
+
     private function client(): PendingRequest
     {
         $token = (string) config('incident.telegram.bot_token');
@@ -30,10 +33,18 @@ class TelegramBotService
 
     public function sendMessage(string|int $chatId, string $text, ?array $replyMarkup = null): array
     {
-        return $this->client()->post('sendMessage', array_filter([
-            'chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML',
-            'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
-        ]))->throw()->json();
+        // Previous direct connection to api.telegram.org:
+        // return $this->client()->post('sendMessage', array_filter([
+        //     'chat_id' => $chatId, 'text' => $text, 'parse_mode' => 'HTML',
+        //     'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
+        // ]))->throw()->json();
+
+        return [
+            'ok' => $this->sendTelegram($text, $chatId, (string) config('incident.telegram.bot_token')),
+            // The supplied gateway contract only returns a success status; it
+            // does not provide Telegram's message_id or inline-keyboard API.
+            'result' => [],
+        ];
     }
 
     public function editMessage(string|int $chatId, string|int $messageId, string $text, ?array $replyMarkup = null): array

@@ -42,6 +42,8 @@ If `AMPTRACE_RELAY_AUTH_SECRET` is configured, add the same value to Laravel as 
 
 The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTProxy is an MTProto transport, not an HTTP/SOCKS proxy, so it cannot be passed directly to Laravel's HTTP Bot API client. To route Bot API calls through it, install a local MTProxy-to-HTTP/SOCKS bridge and set `TELEGRAM_HTTP_PROXY` (for example, `socks5h://127.0.0.1:1080`).
 
+Outbound `sendMessage` calls for both bots use `TELEGRAM_GATEWAY_URL` (default: `https://me.sifb.ir`) with the `token`, `chatId`, and `text` query parameters. The previous direct `sendMessage` implementations remain commented in the service classes. The supplied gateway contract returns only an HTTP success status, so it cannot return a Telegram `message_id` or attach inline keyboards; its API must be extended with those capabilities before keyboard-driven workflows can work through the gateway.
+
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
 
 ## Panel login
