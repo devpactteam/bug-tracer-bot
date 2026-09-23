@@ -53,7 +53,6 @@ function gatewayTelegram(string $token, string $method, array $parameters): neve
     $error = curl_error($curl);
     $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
     curl_close($curl);
-
     if ($response === false) {
         gatewayJson(502, ['ok' => false, 'description' => $error ?: 'Telegram request failed.']);
     }
@@ -67,11 +66,12 @@ function gatewayTelegram(string $token, string $method, array $parameters): neve
 $input = gatewayInput();
 $token = (string) gatewayValue($input, 'token');
 $chatId = gatewayValue($input, 'chatId', 'chat_id');
+$messageId = gatewayValue($input, 'messageId', 'message_id');
 $text = gatewayValue($input, 'text');
-if ($token === '' || $chatId === null || $chatId === '' || ! is_string($text)) {
-    gatewayJson(422, ['ok' => false, 'description' => 'token, chatId, and text are required.']);
+if ($token === '' || $chatId === null || $chatId === '' || $messageId === null || $messageId === '' || ! is_string($text)) {
+    gatewayJson(422, ['ok' => false, 'description' => 'token, chatId, messageId, and text are required.']);
 }
-$parameters = ['chat_id' => $chatId, 'text' => $text];
+$parameters = ['chat_id' => $chatId, 'message_id' => $messageId, 'text' => $text];
 $parseMode = gatewayValue($input, 'parseMode', 'parse_mode');
 if (is_string($parseMode) && $parseMode !== '') {
     $parameters['parse_mode'] = $parseMode;
@@ -84,4 +84,4 @@ if (is_string($replyMarkup) && $replyMarkup !== '') {
     $parameters['reply_markup'] = $replyMarkup;
 }
 
-gatewayTelegram($token, 'sendMessage', $parameters);
+gatewayTelegram($token, 'editMessageText', $parameters);

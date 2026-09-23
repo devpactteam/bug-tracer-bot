@@ -39,36 +39,59 @@ class TelegramBotService
         //     'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
         // ]))->throw()->json();
 
-        return [
-            'ok' => $this->sendTelegram($text, $chatId, (string) config('incident.telegram.bot_token')),
-            // The supplied gateway contract only returns a success status; it
-            // does not provide Telegram's message_id or inline-keyboard API.
-            'result' => [],
-        ];
+        return $this->sendTelegramMessage(
+            $text,
+            $chatId,
+            (string) config('incident.telegram.bot_token'),
+            $replyMarkup,
+        );
     }
 
     public function editMessage(string|int $chatId, string|int $messageId, string $text, ?array $replyMarkup = null): array
     {
-        return $this->client()->post('editMessageText', array_filter([
-            'chat_id' => $chatId, 'message_id' => $messageId, 'text' => $text, 'parse_mode' => 'HTML',
-            'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
-        ]))->throw()->json();
+        // Previous direct connection to api.telegram.org:
+        // return $this->client()->post('editMessageText', array_filter([
+        //     'chat_id' => $chatId, 'message_id' => $messageId, 'text' => $text, 'parse_mode' => 'HTML',
+        //     'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
+        // ]))->throw()->json();
+
+        return $this->editTelegramMessage(
+            $chatId,
+            $messageId,
+            $text,
+            $replyMarkup,
+            (string) config('incident.telegram.bot_token'),
+        );
     }
 
     public function deleteMessage(string|int $chatId, string|int $messageId): array
     {
-        return $this->client()->post('deleteMessage', [
-            'chat_id' => $chatId,
-            'message_id' => $messageId,
-        ])->throw()->json();
+        // Previous direct connection to api.telegram.org:
+        // return $this->client()->post('deleteMessage', [
+        //     'chat_id' => $chatId,
+        //     'message_id' => $messageId,
+        // ])->throw()->json();
+
+        return $this->deleteTelegramMessageViaGateway(
+            $chatId,
+            $messageId,
+            (string) config('incident.telegram.bot_token'),
+        );
     }
 
     public function answerCallbackQuery(string $callbackQueryId, string $text = ''): array
     {
         try {
-            return $this->client()
-                ->post('answerCallbackQuery', ['callback_query_id' => $callbackQueryId, 'text' => $text])
-                ->throw()->json();
+            // Previous direct connection to api.telegram.org:
+            // return $this->client()
+            //     ->post('answerCallbackQuery', ['callback_query_id' => $callbackQueryId, 'text' => $text])
+            //     ->throw()->json();
+
+            return $this->answerTelegramCallbackQuery(
+                $callbackQueryId,
+                $text,
+                (string) config('incident.telegram.bot_token'),
+            );
         } catch (RequestException $exception) {
             // A replayed/late callback can legitimately be rejected by Telegram.
             if ($exception->response?->status() === 400
@@ -88,9 +111,15 @@ class TelegramBotService
     public function getFile(string $fileId): ?string
     {
         try {
-            $filePath = $this->client()
-                ->post('getFile', ['file_id' => $fileId])
-                ->throw()->json('result.file_path');
+            // Previous direct connection to api.telegram.org:
+            // $filePath = $this->client()
+            //     ->post('getFile', ['file_id' => $fileId])
+            //     ->throw()->json('result.file_path');
+
+            $filePath = data_get(
+                $this->getTelegramFile($fileId, (string) config('incident.telegram.bot_token')),
+                'result.file_path',
+            );
         } catch (\Throwable $exception) {
             report($exception);
 
@@ -107,23 +136,23 @@ class TelegramBotService
     public function downloadFile(string $filePath): ?string
     {
         $token = (string) config('incident.telegram.bot_token');
-        $url = rtrim((string) config('incident.telegram.api_base_url'), '/')."/file/bot{$token}/{$filePath}";
-
-        $request = Http::withOptions(['timeout' => 60]);
-        $bridge = config('incident.telegram.proxy.http_bridge');
-        if (is_string($bridge) && $bridge !== '') {
-            $request = $request->withOptions(['proxy' => $bridge]);
-        }
+        // Previous direct connection to api.telegram.org:
+        // $url = rtrim((string) config('incident.telegram.api_base_url'), '/')."/file/bot{$token}/{$filePath}";
+        // $request = Http::withOptions(['timeout' => 60]);
+        // $bridge = config('incident.telegram.proxy.http_bridge');
+        // if (is_string($bridge) && $bridge !== '') {
+        //     $request = $request->withOptions(['proxy' => $bridge]);
+        // }
+        // $response = $request->get($url);
+        // return $response->successful() ? $response->body() : null;
 
         try {
-            $response = $request->get($url);
+            return $this->downloadTelegramFile($filePath, $token);
         } catch (\Throwable $exception) {
             report($exception);
 
             return null;
         }
-
-        return $response->successful() ? $response->body() : null;
     }
 
     public function previewKeyboard(string $sessionId): array

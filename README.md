@@ -42,7 +42,18 @@ If `AMPTRACE_RELAY_AUTH_SECRET` is configured, add the same value to Laravel as 
 
 The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTProxy is an MTProto transport, not an HTTP/SOCKS proxy, so it cannot be passed directly to Laravel's HTTP Bot API client. To route Bot API calls through it, install a local MTProxy-to-HTTP/SOCKS bridge and set `TELEGRAM_HTTP_PROXY` (for example, `socks5h://127.0.0.1:1080`).
 
-Outbound `sendMessage` calls for both bots use `TELEGRAM_GATEWAY_URL` (default: `https://me.sifb.ir`) with the `token`, `chatId`, and `text` query parameters. The previous direct `sendMessage` implementations remain commented in the service classes. The supplied gateway contract returns only an HTTP success status, so it cannot return a Telegram `message_id` or attach inline keyboards; its API must be extended with those capabilities before keyboard-driven workflows can work through the gateway.
+Upload the outbound gateway scripts from `deployment/` to the intermediary server:
+
+- `send-message.php` (or the existing root URL mapped to this script)
+- `edit-message.php`
+- `delete-message.php`
+- `answer-callback-query.php`
+- `get-file.php`
+- `download-file.php`
+
+`TELEGRAM_GATEWAY_URL` remains the exact working send-message URL and uses the existing `token`, `chatId`, and `text` query contract. It now also carries `parse_mode` and optional `reply_markup`, and the full Telegram JSON response is returned so the application receives `message_id`. The other operations default to the sibling filenames listed above. Set `TELEGRAM_GATEWAY_BASE_URL` when those files share another base URL, or set the individual `TELEGRAM_GATEWAY_*_URL` values when their public URLs differ.
+
+All six scripts also accept equivalent JSON input, either at the top level or under `body`. Serve them only over HTTPS and configure the intermediary web server not to record query strings because requests contain bot tokens. This change gateways only `TelegramBotService`; assignee-bot operations and both `getUpdates` polling commands still require direct Telegram connectivity and are intentionally deferred.
 
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
 

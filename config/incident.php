@@ -1,9 +1,28 @@
 <?php
 
+$telegramGatewayUrl = env('TELEGRAM_GATEWAY_URL', 'https://me.sifb.ir');
+$telegramGatewayParts = parse_url($telegramGatewayUrl) ?: [];
+$telegramGatewayPath = $telegramGatewayParts['path'] ?? '';
+if (str_ends_with($telegramGatewayPath, '.php')) {
+    $telegramGatewayPath = rtrim(str_replace('\\', '/', dirname($telegramGatewayPath)), '/.');
+}
+$telegramGatewayBaseUrl = env('TELEGRAM_GATEWAY_BASE_URL') ?: (
+    ($telegramGatewayParts['scheme'] ?? 'https').'://'.($telegramGatewayParts['host'] ?? '').
+    (isset($telegramGatewayParts['port']) ? ':'.$telegramGatewayParts['port'] : '').
+    ($telegramGatewayPath !== '' ? '/'.ltrim($telegramGatewayPath, '/') : '')
+);
+
 return [
     'telegram' => [
         'bot_token' => env('TELEGRAM_BOT_TOKEN'),
-        'gateway_url' => env('TELEGRAM_GATEWAY_URL', 'https://me.sifb.ir'),
+        'gateway_url' => $telegramGatewayUrl,
+        'gateway_endpoints' => [
+            'edit_message' => env('TELEGRAM_GATEWAY_EDIT_MESSAGE_URL') ?: rtrim($telegramGatewayBaseUrl, '/').'/edit-message.php',
+            'delete_message' => env('TELEGRAM_GATEWAY_DELETE_MESSAGE_URL') ?: rtrim($telegramGatewayBaseUrl, '/').'/delete-message.php',
+            'answer_callback_query' => env('TELEGRAM_GATEWAY_ANSWER_CALLBACK_QUERY_URL') ?: rtrim($telegramGatewayBaseUrl, '/').'/answer-callback-query.php',
+            'get_file' => env('TELEGRAM_GATEWAY_GET_FILE_URL') ?: rtrim($telegramGatewayBaseUrl, '/').'/get-file.php',
+            'download_file' => env('TELEGRAM_GATEWAY_DOWNLOAD_FILE_URL') ?: rtrim($telegramGatewayBaseUrl, '/').'/download-file.php',
+        ],
         'webhook_secret' => env('TELEGRAM_WEBHOOK_SECRET'),
         'relay_auth_secret' => env('TELEGRAM_RELAY_AUTH_SECRET'),
         'api_base_url' => env('TELEGRAM_API_BASE_URL', 'https://api.telegram.org'),
