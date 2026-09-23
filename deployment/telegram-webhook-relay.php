@@ -13,6 +13,8 @@
 
 declare(strict_types=1);
 
+require __DIR__.'/load-env.php';
+
 const RELAY_VERSION = '1.0.0';
 
 function relayConfig(string $name, string $default = ''): string

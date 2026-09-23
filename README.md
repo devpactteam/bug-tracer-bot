@@ -19,7 +19,7 @@ For production webhooks, configure Telegram with the same `TELEGRAM_WEBHOOK_SECR
 
 ### Intermediary webhook server
 
-The standalone file [deployment/telegram-webhook-relay.php](deployment/telegram-webhook-relay.php) lets Telegram call an HTTPS server that can reach the Laravel server. Upload only this file to the intermediary server; it requires PHP with cURL and a valid TLS certificate. Configure these environment variables on that server:
+The standalone file [deployment/telegram-webhook-relay.php](deployment/telegram-webhook-relay.php) lets Telegram call an HTTPS server that can reach the Laravel server. It requires PHP with cURL and a valid TLS certificate. Configure the environment variables on that server, or copy [deployment/.env.example](deployment/.env.example) to a non-public `deployment/.env` beside the scripts. The dependency-free loader reads that file automatically, while server-provided variables take precedence.
 
 ```dotenv
 AMPTRACE_LARAVEL_WEBHOOK_URL=https://your-app.example.com/api/telegram/webhook
@@ -42,7 +42,7 @@ If `AMPTRACE_RELAY_AUTH_SECRET` is configured, add the same value to Laravel as 
 
 The MTProxy values are recorded in `.env` for infrastructure use. Telegram MTProxy is an MTProto transport, not an HTTP/SOCKS proxy, so it cannot be passed directly to Laravel's HTTP Bot API client. To route Bot API calls through it, install a local MTProxy-to-HTTP/SOCKS bridge and set `TELEGRAM_HTTP_PROXY` (for example, `socks5h://127.0.0.1:1080`).
 
-Upload the outbound gateway scripts from `deployment/` to the intermediary server:
+Upload `load-env.php` together with the outbound gateway scripts from `deployment/` to the intermediary server (and the relay when using `deployment/.env`):
 
 - `send-message.php` (or the existing root URL mapped to this script)
 - `edit-message.php`
@@ -64,7 +64,7 @@ AMPTRACE_DEPLOYMENT_LOG_ENABLED=true
 AMPTRACE_DEPLOYMENT_LOG_DIR=/var/log/amptrace-telegram
 ```
 
-Expose these variables to PHP through the intermediary server's environment or hosting control panel. Logging is disabled when `AMPTRACE_DEPLOYMENT_LOG_ENABLED` is absent or false. If the log directory is omitted, scripts use `deployment/logs`; for production, prefer a directory outside the public web root and grant the PHP worker write access without making it world-writable.
+Expose these variables to PHP through the intermediary server's environment or hosting control panel, or place them in the non-public `deployment/.env` file. Logging is disabled when `AMPTRACE_DEPLOYMENT_LOG_ENABLED` is absent or false. If the log directory is omitted, scripts use `deployment/logs`; for production, prefer a directory outside the public web root and grant the PHP worker write access without making it world-writable.
 
 Each script writes JSON Lines to its own file, such as `send-message.log`, `download-file.log`, or `telegram-webhook-relay.log`. Records contain timestamps, per-request IDs, processing stages, timing, status codes, byte counts, and safe request metadata. Bot tokens, webhook/relay secrets, authorization headers, message and callback contents, upstream response bodies, and downloaded bytes are not logged.
 

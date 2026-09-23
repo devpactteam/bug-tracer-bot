@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require __DIR__.'/load-env.php';
+
 function gatewayLog(string $step, array $context = []): void
 {
     $enabled = getenv('AMPTRACE_DEPLOYMENT_LOG_ENABLED');
