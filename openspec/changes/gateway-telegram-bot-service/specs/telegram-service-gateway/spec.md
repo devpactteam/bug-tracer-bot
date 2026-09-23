@@ -54,3 +54,18 @@ The change SHALL NOT alter Telegram access performed by the assignee notificatio
 #### Scenario: Deferred Telegram integrations
 - **WHEN** the gateway change is deployed
 - **THEN** assignee-bot operations and polling retain their existing implementations
+
+### Requirement: Deployment diagnostics are configurable and separated
+Every deployment PHP script SHALL write structured, step-by-step diagnostic events to its own log file when deployment logging is enabled through an environment variable. Logging SHALL be disabled by default and SHALL NOT record bot tokens, webhook secrets, authorization secrets, message contents, callback text, or downloaded file bytes.
+
+#### Scenario: Logging enabled
+- **WHEN** `AMPTRACE_DEPLOYMENT_LOG_ENABLED` is set to a true value and a deployment script handles a request
+- **THEN** that script appends timestamped events with a request identifier, processing stage, status, timing, and safe metadata to its own log file
+
+#### Scenario: Logging disabled
+- **WHEN** `AMPTRACE_DEPLOYMENT_LOG_ENABLED` is unset or false
+- **THEN** deployment scripts do not create or append diagnostic log files
+
+#### Scenario: Request fails
+- **WHEN** validation, cURL initialization, Telegram communication, or Laravel relay communication fails
+- **THEN** the responsible script records the failing stage and safe error metadata before returning its error response

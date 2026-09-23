@@ -9,6 +9,7 @@ The application server cannot call Telegram directly, while most operations in `
 - Add gateway helpers to `SendsTelegramViaGateway` that preserve Telegram JSON responses and raw downloaded file bytes.
 - Retain the direct Telegram implementations as commented reference code in `TelegramBotService`, and route its public operations through the gateway trait.
 - Add focused tests for gateway parameters, response propagation, error behavior, and file downloads.
+- Add opt-in step-by-step diagnostic logging to every deployment PHP script, with a separate log file per script and secrets excluded from log context.
 - Keep Telegram operations outside `TelegramBotService`, including the assignee service and polling commands, out of scope for this change.
 
 ## Capabilities
@@ -24,6 +25,6 @@ None.
 ## Impact
 
 - Affected application code: `app/Services/TelegramBotService.php`, `app/Services/Concerns/SendsTelegramViaGateway.php`, and Telegram gateway configuration.
-- Affected deployment code: `deployment/send-message.php` plus new endpoint scripts for the remaining service operations.
+- Affected deployment code: every PHP script under `deployment/`, including the outbound endpoints and webhook relay.
 - Affected tests and deployment documentation for gateway endpoint paths and request/response contracts.
 - No new Composer dependencies and no changes to `AssigneeNotificationService` or Telegram polling commands.

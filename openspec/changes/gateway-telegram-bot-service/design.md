@@ -43,12 +43,19 @@ Each endpoint will contain its small amount of request normalization and cURL fo
 
 Each public service method will keep its prior direct Telegram code as a commented reference block and delegate to a narrowly named trait helper. The private direct client remains only to make those reference blocks understandable and is not called by active service paths.
 
+### Use self-contained structured file logging
+
+Every deployment script will contain the same small logging helper so it remains independently deployable. `AMPTRACE_DEPLOYMENT_LOG_ENABLED` controls logging and defaults to disabled; `AMPTRACE_DEPLOYMENT_LOG_DIR` optionally selects the directory and otherwise defaults to `deployment/logs`. Each event is one JSON line in a file named after the script, with a per-request correlation ID.
+
+Logs include stages, HTTP method, input key names, Telegram operation, upstream status, byte counts, and duration. Tokens, secrets, authorization headers, message/callback contents, response bodies, and downloaded bytes are intentionally excluded. Logging failures are suppressed so diagnostics can never break the gateway operation.
+
 ## Risks / Trade-offs
 
 - [GET URLs can expose tokens in intermediary access logs] → Preserve the required compatibility now, document HTTPS and log-handling expectations, and leave authenticated POST migration for a future change.
 - [Long text or reply markup can exceed URL limits] → Keep JSON input support in every deployment script so clients can migrate without another script rewrite.
 - [Duplicated endpoint plumbing can drift] → Cover every endpoint contract with focused application tests and keep each script intentionally small.
 - [Gateway timeout differs for file downloads] → Use a longer timeout for raw file downloads than for JSON API operations.
+- [Log files can grow indefinitely or become publicly downloadable] → Keep logging opt-in, support an external log directory, document web-server access denial and operating-system log rotation, and avoid sensitive payloads.
 
 ## Migration Plan
 

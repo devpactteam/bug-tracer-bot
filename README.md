@@ -55,6 +55,21 @@ Upload the outbound gateway scripts from `deployment/` to the intermediary serve
 
 All six scripts also accept equivalent JSON input, either at the top level or under `body`. Serve them only over HTTPS and configure the intermediary web server not to record query strings because requests contain bot tokens. This change gateways only `TelegramBotService`; assignee-bot operations and both `getUpdates` polling commands still require direct Telegram connectivity and are intentionally deferred.
 
+### Deployment diagnostics
+
+Every PHP script in `deployment/`, including the webhook relay, supports opt-in structured logging:
+
+```dotenv
+AMPTRACE_DEPLOYMENT_LOG_ENABLED=true
+AMPTRACE_DEPLOYMENT_LOG_DIR=/var/log/amptrace-telegram
+```
+
+Expose these variables to PHP through the intermediary server's environment or hosting control panel. Logging is disabled when `AMPTRACE_DEPLOYMENT_LOG_ENABLED` is absent or false. If the log directory is omitted, scripts use `deployment/logs`; for production, prefer a directory outside the public web root and grant the PHP worker write access without making it world-writable.
+
+Each script writes JSON Lines to its own file, such as `send-message.log`, `download-file.log`, or `telegram-webhook-relay.log`. Records contain timestamps, per-request IDs, processing stages, timing, status codes, byte counts, and safe request metadata. Bot tokens, webhook/relay secrets, authorization headers, message and callback contents, upstream response bodies, and downloaded bytes are not logged.
+
+Configure the operating system's `logrotate` (or the hosting provider's equivalent) for `*.log` files in this directory. The scripts append with file locking but do not delete or rotate historical logs themselves. Ensure the web server explicitly denies access to `.log` files if logs must remain under the document root.
+
 The `incident_tickets` table contains the RCA fields (`root_cause_category`, `root_cause_description`, `resolution_action`, `root_cause_author_id`, `resolved_at`) for post-resolution workflows and monthly reporting.
 
 ## Panel login

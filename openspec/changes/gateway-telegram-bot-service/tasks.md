@@ -15,3 +15,10 @@
 - [x] 3.1 Add or update tests covering send parameters, complete JSON responses, the other gateway operations, failure handling, and raw downloads.
 - [x] 3.2 Update deployment environment examples and README instructions for the new endpoint files and scope limitation.
 - [x] 3.3 Run available syntax checks, focused tests, formatting checks, and strict OpenSpec validation.
+
+## 4. Deployment Diagnostics
+
+- [x] 4.1 Add opt-in structured logging helpers and step events to every outbound gateway PHP script, with a distinct file per endpoint and sensitive values excluded.
+- [x] 4.2 Add the same per-script logging behavior to the Telegram webhook relay, including validation, forwarding, retry response, and timing events.
+- [x] 4.3 Document logging environment variables, permissions, safe log placement, and rotation guidance in deployment examples and README.
+- [x] 4.4 Add logging smoke coverage and rerun syntax, focused tests, formatting, and strict OpenSpec validation.
