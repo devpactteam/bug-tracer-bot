@@ -1,0 +1,18 @@
+apps:
+  - name: bug-tracer-queue
+    cwd: .
+    script: artisan
+    interpreter: php
+    args: >-
+      queue:work
+      --queue=default
+      --sleep=3
+      --tries=3
+      --timeout=120
+      --max-time=3600
+    instances: 1
+    exec_mode: fork
+    autorestart: true
+    watch: false
+    max_memory_restart: 512M
+    kill_timeout: 15000
