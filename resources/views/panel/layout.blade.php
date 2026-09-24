@@ -279,6 +279,7 @@
     <nav style="display:flex; align-items:center; gap:8px; flex-wrap:wrap">
         <a href="{{ route('panel.index') }}">📋 لیست تیکت‌ها</a>
         <a href="{{ route('panel.sessions.index') }}">🧩 سشن‌ها</a>
+        <a href="{{ route('panel.telegram-webhooks.index') }}">🔗 وب‌هوک‌های تلگرام</a>
         <a href="{{ route('panel.report') }}">📊 گزارش</a>
         <a href="{{ route('panel.users.index') }}">👥 کاربران</a>
         <span>{{ auth('web')->user()->name }}</span>

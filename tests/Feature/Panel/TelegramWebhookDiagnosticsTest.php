@@ -14,7 +14,11 @@ class TelegramWebhookDiagnosticsTest extends PanelTestCase
         ]);
         $trace->events()->create(['checkpoint' => 'request.received', 'metadata' => ['update_id' => 42]]);
 
-        $this->get(route('panel.telegram-webhooks.index'))->assertOk()->assertSee('42');
+        $this->get(route('panel.telegram-webhooks.index'))
+            ->assertOk()
+            ->assertSee('42')
+            ->assertSee('وب‌هوک‌های تلگرام')
+            ->assertSee(route('panel.telegram-webhooks.index'), false);
         $this->get(route('panel.telegram-webhooks.show', $trace))->assertOk()->assertSee('request.received')->assertDontSee('token');
     }
 
