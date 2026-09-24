@@ -42,7 +42,11 @@ trait SendsTelegramViaGateway
                     ? json_encode($replyMarkup, JSON_THROW_ON_ERROR)
                     : null,
             ], false);
-        } catch (Throwable) {
+        } catch (Throwable $exception) {
+            if (method_exists($this, 'traceTelegramGatewayException')) {
+                $this->traceTelegramGatewayException($exception);
+            }
+
             return ['ok' => false, 'result' => []];
         }
     }
@@ -114,6 +118,9 @@ trait SendsTelegramViaGateway
         $payload = $response->json();
         if (! is_array($payload)) {
             throw new RuntimeException('Telegram gateway returned an invalid JSON response.');
+        }
+        if (method_exists($this, 'traceTelegramGatewayResponse')) {
+            $this->traceTelegramGatewayResponse($url, $response->status(), $payload);
         }
 
         return $payload;

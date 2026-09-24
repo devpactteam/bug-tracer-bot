@@ -28,7 +28,9 @@ class TelegramWebhookController extends Controller
         }
         try {
             $observability->record($trace, 'authentication.accepted');
+            $observability->record($trace, 'handler.dispatching');
             $handler->handle($request->json()->all());
+            $observability->record($trace, 'handler.completed');
             $observability->finish($trace);
         } catch (\Throwable $exception) {
             $observability->fail($trace, $exception);

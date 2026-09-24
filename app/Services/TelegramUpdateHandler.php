@@ -21,13 +21,16 @@ class TelegramUpdateHandler
     public function handle(array $update): void
     {
         $updateId = (int) ($update['update_id'] ?? 0);
+        $this->trace('handler.started', ['update_id' => $updateId]);
+        $this->trace('update.claiming', ['update_id' => $updateId]);
         if ($updateId <= 0 || ! $this->claimUpdate($updateId)) {
             $this->trace('update.duplicate_or_invalid', ['update_id' => $updateId]);
             return;
         }
+        $this->trace('update.claimed', ['update_id' => $updateId]);
 
         if (isset($update['callback_query'])) {
-            $this->trace('update.callback');
+            $this->trace('update.callback', ['has_callback_id' => filled($update['callback_query']['id'] ?? null)]);
             $this->handleCallback($update['callback_query']);
 
             return;
@@ -39,20 +42,31 @@ class TelegramUpdateHandler
             return;
         }
         $operatorId = (string) ($message['from']['id'] ?? '');
+        $chatId = (string) ($message['chat']['id'] ?? '');
+        $text = trim((string) ($message['text'] ?? $message['caption'] ?? ''));
+        $this->trace('message.received', [
+            'operator_id' => $operatorId,
+            'chat_id' => $chatId,
+            'message_id' => $message['message_id'] ?? null,
+            'has_text' => isset($message['text']),
+            'has_caption' => isset($message['caption']),
+            'text_length' => mb_strlen($text),
+            'media_types' => array_values(array_intersect(['photo', 'document', 'video', 'audio', 'voice'], array_keys($message))),
+        ]);
         if (! $this->authorized($operatorId)) {
             $this->trace('update.unauthorized', ['operator_id' => $operatorId]);
             return;
         }
+        $this->trace('authorization.accepted', ['operator_id' => $operatorId]);
 
-        $chatId = (string) ($message['chat']['id'] ?? '');
-        $text = trim((string) ($message['text'] ?? $message['caption'] ?? ''));
         if (strcasecmp($text, '/start') === 0) {
-            $this->trace('telegram.action', ['action' => 'start']);
+            $this->trace('command.detected', ['command' => 'start', 'chat_id' => $chatId]);
             $this->telegram->sendMessage($chatId, '👋 سلام! پیام‌های مربوط به مشکل را فوروارد کنید 📩؛ سپس روی <b>🚀 نهایی‌سازی و تحلیل</b> بزنید.');
 
             return;
         }
         if (strcasecmp($text, '/finalize') === 0) {
+            $this->trace('command.detected', ['command' => 'finalize', 'chat_id' => $chatId]);
             $session = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)->latest('id')->first();
             if ($session) {
                 $this->trace('queue.dispatched', ['session_id' => $session->session_id, 'queue' => config('incident.intake.queue')]);
@@ -62,6 +76,7 @@ class TelegramUpdateHandler
             return;
         }
         if (preg_match('/^\/assignee(?:\s+(.+))?$/i', $text, $matches)) {
+            $this->trace('command.detected', ['command' => 'assignee', 'chat_id' => $chatId, 'has_argument' => isset($matches[1])]);
             $this->handleAssigneeCommand($chatId, $matches[1] ?? null);
 
             return;

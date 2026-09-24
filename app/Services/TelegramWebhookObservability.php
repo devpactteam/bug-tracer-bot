@@ -63,7 +63,7 @@ class TelegramWebhookObservability
         return $safe;
     }
 
-    private function safeError(string $message): string
+    public function safeError(string $message): string
     {
         return str($message)->replaceMatches('/(?i)(token|secret|authorization|password)\\s*[=:]\\s*[^\\s,]+/', '$1=[redacted]')->limit(500, '…')->toString();
     }

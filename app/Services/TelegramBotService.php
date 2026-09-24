@@ -13,6 +13,8 @@ class TelegramBotService
 {
     use SendsTelegramViaGateway;
 
+    public function __construct(private readonly TelegramWebhookObservability $observability) {}
+
     private function client(): PendingRequest
     {
         $token = (string) config('incident.telegram.bot_token');
@@ -39,12 +41,83 @@ class TelegramBotService
         //     'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
         // ]))->throw()->json();
 
-        return $this->sendTelegramMessage(
+        $this->traceSend('telegram.send.attempt', $chatId, $text, $replyMarkup);
+        $result = $this->sendTelegramMessage(
             $text,
             $chatId,
             (string) config('incident.telegram.bot_token'),
             $replyMarkup,
         );
+        $this->traceSendResult($chatId, $result);
+
+        return $result;
+    }
+
+    private function traceSend(string $checkpoint, string|int $chatId, string $text, ?array $replyMarkup): void
+    {
+        if (! $trace = $this->observability->current()) {
+            return;
+        }
+
+        $gatewayUrl = (string) config('incident.telegram.gateway_url');
+        $this->observability->record($trace, $checkpoint, [
+            'operation' => 'send_message',
+            'chat_id' => (string) $chatId,
+            'text_length' => mb_strlen($text),
+            'has_reply_markup' => $replyMarkup !== null,
+            'app_debug' => (bool) config('app.debug'),
+            'bot_token_configured' => filled(config('incident.telegram.bot_token')),
+            'gateway_host' => parse_url($gatewayUrl, PHP_URL_HOST) ?: 'invalid_or_relative_url',
+        ]);
+    }
+
+    private function traceSendResult(string|int $chatId, array $result): void
+    {
+        if (! $trace = $this->observability->current()) {
+            return;
+        }
+
+        $ok = (bool) ($result['ok'] ?? false);
+        $this->observability->record($trace, $ok ? 'telegram.send.succeeded' : 'telegram.send.failed', [
+            'operation' => 'send_message',
+            'chat_id' => (string) $chatId,
+            'telegram_ok' => $ok,
+            'message_id' => $result['result']['message_id'] ?? null,
+            'failure_reason' => $ok
+                ? null
+                : (config('app.debug') ? 'suppressed_in_debug' : (filled(config('incident.telegram.bot_token')) ? 'gateway_rejected_or_unreachable' : 'missing_bot_token')),
+            'gateway_description' => isset($result['description']) ? str((string) $result['description'])->limit(300)->toString() : null,
+        ]);
+    }
+
+    private function traceTelegramGatewayResponse(string $url, int $status, array $payload): void
+    {
+        if (! $trace = $this->observability->current()) {
+            return;
+        }
+
+        $this->observability->record($trace, 'telegram.gateway.responded', [
+            'operation' => 'send_message',
+            'http_status' => $status,
+            'telegram_ok' => (bool) ($payload['ok'] ?? false),
+            'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
+            'gateway_description' => isset($payload['description'])
+                ? $this->observability->safeError((string) $payload['description'])
+                : null,
+        ]);
+    }
+
+    private function traceTelegramGatewayException(\Throwable $exception): void
+    {
+        if (! $trace = $this->observability->current()) {
+            return;
+        }
+
+        $this->observability->record($trace, 'telegram.gateway.exception', [
+            'operation' => 'send_message',
+            'exception_class' => $exception::class,
+            'exception_message' => $this->observability->safeError($exception->getMessage()),
+        ]);
     }
 
     public function editMessage(string|int $chatId, string|int $messageId, string $text, ?array $replyMarkup = null): array
