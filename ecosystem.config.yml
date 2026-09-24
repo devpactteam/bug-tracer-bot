@@ -14,5 +14,3 @@ apps:
     exec_mode: fork
     autorestart: true
     watch: false
-    max_memory_restart: 512M
-    kill_timeout: 15000
