@@ -117,6 +117,9 @@ trait SendsTelegramViaGateway
         }
         $payload = $response->json();
         if (! is_array($payload)) {
+            if (method_exists($this, 'traceInvalidTelegramGatewayResponse')) {
+                $this->traceInvalidTelegramGatewayResponse($url, $response->status(), $response->body(), $response->header('Content-Type'));
+            }
             throw new RuntimeException('Telegram gateway returned an invalid JSON response.');
         }
         if (method_exists($this, 'traceTelegramGatewayResponse')) {

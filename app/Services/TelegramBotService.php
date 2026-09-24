@@ -7,6 +7,7 @@ use App\Services\Concerns\SendsTelegramViaGateway;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class TelegramBotService
@@ -105,6 +106,28 @@ class TelegramBotService
                 ? $this->observability->safeError((string) $payload['description'])
                 : null,
         ]);
+    }
+
+    /** The complete non-JSON body is kept only in the restricted daily log. */
+    private function traceInvalidTelegramGatewayResponse(string $url, int $status, string $body, ?string $contentType): void
+    {
+        $trace = $this->observability->current();
+        Log::channel('telegram-webhook')->error('telegram.gateway.invalid_json_response', [
+            'correlation_id' => $trace?->correlation_id,
+            'update_id' => $trace?->update_id,
+            'operation' => 'send_message',
+            'http_status' => $status,
+            'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
+            'content_type' => $contentType,
+            'gateway_response_body' => $body,
+        ]);
+        if ($trace) {
+            $this->observability->record($trace, 'telegram.gateway.invalid_json', [
+                'operation' => 'send_message', 'http_status' => $status,
+                'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
+                'content_type' => $contentType, 'response_bytes' => strlen($body),
+            ]);
+        }
     }
 
     private function traceTelegramGatewayException(\Throwable $exception): void
