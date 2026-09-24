@@ -39,6 +39,7 @@ return [
             'intval',
             explode(',', (string) env('TELEGRAM_ALLOWED_OPERATOR_IDS', ''))
         ))),
+        'webhook_trace_retention_days' => (int) env('TELEGRAM_WEBHOOK_TRACE_RETENTION_DAYS', 30),
     ],
 
     'intake' => [

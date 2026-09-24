@@ -4,6 +4,7 @@ use App\Http\Controllers\Panel\AuthController;
 use App\Http\Controllers\Panel\IntakeSessionPanelController;
 use App\Http\Controllers\Panel\SupportUserController;
 use App\Http\Controllers\Panel\TicketPanelController;
+use App\Http\Controllers\Panel\TelegramWebhookDiagnosticsController;
 use App\Http\Middleware\EnsureSupportUserIsActive;
 use App\Http\Middleware\RequireHttps;
 use Illuminate\Support\Facades\Route;
@@ -24,6 +25,8 @@ Route::prefix('panel')->name('panel.')->middleware([RequireHttps::class, 'auth:w
     Route::get('/', [TicketPanelController::class, 'index'])->name('index');
     Route::get('/report', [TicketPanelController::class, 'report'])->name('report');
     Route::get('/sessions', [IntakeSessionPanelController::class, 'index'])->name('sessions.index');
+    Route::get('/telegram-webhooks', [TelegramWebhookDiagnosticsController::class, 'index'])->name('telegram-webhooks.index');
+    Route::get('/telegram-webhooks/{trace}', [TelegramWebhookDiagnosticsController::class, 'show'])->name('telegram-webhooks.show');
     Route::post('/sessions/{session}/close', [IntakeSessionPanelController::class, 'close'])->name('sessions.close');
     Route::get('/tickets/{ticket}', [TicketPanelController::class, 'show'])->name('tickets.show');
     Route::post('/tickets/{ticket}/close', [TicketPanelController::class, 'close'])->name('tickets.close');

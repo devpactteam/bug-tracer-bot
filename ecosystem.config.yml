@@ -2,7 +2,7 @@ apps:
   - name: bug-tracer-queue
     cwd: .
     script: artisan
-    interpreter: php
+    interpreter: php8.3
     args: >-
       queue:work
       --queue=default

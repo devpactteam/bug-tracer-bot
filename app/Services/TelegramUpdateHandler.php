@@ -15,16 +15,19 @@ class TelegramUpdateHandler
     public function __construct(
         private readonly IncidentIntakeService $intake,
         private readonly TelegramBotService $telegram,
+        private readonly TelegramWebhookObservability $observability,
     ) {}
 
     public function handle(array $update): void
     {
         $updateId = (int) ($update['update_id'] ?? 0);
         if ($updateId <= 0 || ! $this->claimUpdate($updateId)) {
+            $this->trace('update.duplicate_or_invalid', ['update_id' => $updateId]);
             return;
         }
 
         if (isset($update['callback_query'])) {
+            $this->trace('update.callback');
             $this->handleCallback($update['callback_query']);
 
             return;
@@ -32,16 +35,19 @@ class TelegramUpdateHandler
 
         $message = $update['message'] ?? null;
         if (! $message) {
+            $this->trace('update.ignored', ['reason' => 'no_message']);
             return;
         }
         $operatorId = (string) ($message['from']['id'] ?? '');
         if (! $this->authorized($operatorId)) {
+            $this->trace('update.unauthorized', ['operator_id' => $operatorId]);
             return;
         }
 
         $chatId = (string) ($message['chat']['id'] ?? '');
         $text = trim((string) ($message['text'] ?? $message['caption'] ?? ''));
         if (strcasecmp($text, '/start') === 0) {
+            $this->trace('telegram.action', ['action' => 'start']);
             $this->telegram->sendMessage($chatId, '👋 سلام! پیام‌های مربوط به مشکل را فوروارد کنید 📩؛ سپس روی <b>🚀 نهایی‌سازی و تحلیل</b> بزنید.');
 
             return;
@@ -49,6 +55,7 @@ class TelegramUpdateHandler
         if (strcasecmp($text, '/finalize') === 0) {
             $session = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)->latest('id')->first();
             if ($session) {
+                $this->trace('queue.dispatched', ['session_id' => $session->session_id, 'queue' => config('incident.intake.queue')]);
                 $this->intake->finalize($session->session_id);
             }
 
@@ -66,11 +73,13 @@ class TelegramUpdateHandler
             $session = $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
             ProcessIncidentBundleJob::dispatch($session->session_id, true, true)
                 ->onQueue(config('incident.intake.queue'));
+            $this->trace('queue.dispatched', ['session_id' => $session->session_id, 'queue' => config('incident.intake.queue')]);
 
             return;
         }
         $this->intake->appendMessage($this->normalizeMessage($message), $chatId, $operatorId);
         $session = IncidentIntakeSession::query()->where('telegram_chat_id', $chatId)->latest('id')->first();
+        $this->trace('message.accepted', ['operator_id' => $operatorId, 'chat_id' => $chatId, 'session_id' => $session?->session_id]);
         // Avoid one bot reply per forwarded message. Keep a single finalize
         // prompt for the first message in the current intake session.
         if ($session && Cache::add("incident:finalize-prompt:{$session->session_id}", true, now()->addDay())) {
@@ -97,6 +106,11 @@ class TelegramUpdateHandler
         } catch (QueryException) {
             return false;
         }
+    }
+
+    private function trace(string $checkpoint, array $metadata = []): void
+    {
+        if ($trace = $this->observability->current()) $this->observability->record($trace, $checkpoint, $metadata);
     }
 
     private function authorized(string $operatorId): bool

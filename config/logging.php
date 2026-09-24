@@ -73,6 +73,14 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'telegram-webhook' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/telegram-webhook.log'),
+            'level' => env('TELEGRAM_WEBHOOK_LOG_LEVEL', 'info'),
+            'days' => env('TELEGRAM_WEBHOOK_LOG_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
         'monthly' => [
             'driver' => 'monthly',
             'path' => storage_path('logs/laravel.log'),

@@ -8,6 +8,8 @@ use App\Models\IncidentTicket;
 use App\Models\SupportUser;
 use App\Services\AssigneeNotificationService;
 use App\Services\TelegramBotService;
+use App\Services\TelegramWebhookObservability;
+use App\Models\TelegramWebhookTrace;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -33,13 +35,16 @@ class ProcessIncidentBundleJob implements ShouldQueue
         public readonly bool $finalizeClarifications = false,
     ) {}
 
-    public function handle(AiIncidentAnalysisInterface $ai, TelegramBotService $telegram): void
+    public function handle(AiIncidentAnalysisInterface $ai, TelegramBotService $telegram, TelegramWebhookObservability $observability): void
     {
+        $trace = TelegramWebhookTrace::query()->where('session_id', $this->sessionId)->latest('id')->first();
+        if ($trace) $observability->record($trace, 'job.started', ['session_id' => $this->sessionId, 'queue' => config('incident.intake.queue')]);
         $allowedStatuses = ($this->clarificationCheck || $this->finalizeClarifications)
             ? ['awaiting_clarification']
             : ['collecting', 'analyzing'];
         $session = IncidentIntakeSession::query()->where('session_id', $this->sessionId)->first();
         if (! $session || ! in_array($session->status, $allowedStatuses, true)) {
+            if ($trace) $observability->finish($trace, 'job_skipped', ['session_id' => $this->sessionId]);
             return;
         }
 
@@ -53,11 +58,12 @@ class ProcessIncidentBundleJob implements ShouldQueue
             self::dispatch($this->sessionId)
                 ->delay(now()->addSeconds((int) config('incident.intake.debounce_seconds')))
                 ->onQueue(config('incident.intake.queue'));
+            if ($trace) $observability->record($trace, 'job.redispatched', ['session_id' => $this->sessionId]);
 
             return;
         }
 
-        Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram, $allowedStatuses): void {
+        Cache::lock("incident-analysis:{$this->sessionId}", 60)->block(10, function () use ($ai, $telegram, $allowedStatuses, $trace, $observability): void {
             $session = IncidentIntakeSession::query()->with('messages')
                 ->where('session_id', $this->sessionId)->first();
             if (! $session || ! in_array($session->status, $allowedStatuses, true)) {
@@ -161,7 +167,14 @@ class ProcessIncidentBundleJob implements ShouldQueue
             if (! $result['clarification_needed'] && ($sentMessage['result']['message_id'] ?? null)) {
                 $session->update(['preview_message_id' => $sentMessage['result']['message_id']]);
             }
+            if ($trace) $observability->finish($trace, 'job_completed', ['session_id' => $this->sessionId]);
         });
+    }
+
+    public function failed(\Throwable $exception): void
+    {
+        $trace = TelegramWebhookTrace::query()->where('session_id', $this->sessionId)->latest('id')->first();
+        if ($trace) app(TelegramWebhookObservability::class)->fail($trace, $exception);
     }
 
     /**
