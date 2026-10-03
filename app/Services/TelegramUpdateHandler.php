@@ -206,6 +206,7 @@ class TelegramUpdateHandler
 
     private function handleCallback(array $callback): void
     {
+        $startedAt = hrtime(true);
         $operatorId = (string) ($callback['from']['id'] ?? '');
         if (! $this->authorized($operatorId)) {
             return;
@@ -216,7 +217,20 @@ class TelegramUpdateHandler
         }
         $action = $data[1] ?? '';
         $sessionId = $data[2] ?? null;
+        $this->trace('callback.routing', ['action' => $action]);
 
+        try {
+            $this->dispatchCallback($callback, $data, $action, $sessionId);
+        } finally {
+            $this->trace('callback.completed', [
+                'action' => $action,
+                'duration_ms' => (int) ((hrtime(true) - $startedAt) / 1_000_000),
+            ]);
+        }
+    }
+
+    private function dispatchCallback(array $callback, array $data, string $action, ?string $sessionId): void
+    {
         // Assignee picker buttons carry an extra segment:
         // incident:assignee:pick:{sessionId}:{userId}
         if ($action === 'assignee' && $sessionId === 'pick') {
@@ -231,6 +245,7 @@ class TelegramUpdateHandler
         if (! $session) {
             return;
         }
+        $this->trace('callback.session_loaded', ['action' => $action, 'session_id' => $sessionId, 'session_status' => $session->status]);
         if ($action === 'finalize' && $session->status === 'collecting') {
             // Telegram callback queries expire quickly; acknowledge before
             // starting synchronous analysis or dispatching a queue job.
@@ -268,7 +283,9 @@ class TelegramUpdateHandler
             }
             $this->telegram->answerCallbackQuery($callback['id'], '📝 در حال ایجاد تیکت...');
             $this->deleteCallbackMessage($callback['message'] ?? []);
+            $this->trace('callback.ticket_creation.started', ['session_id' => $sessionId]);
             $ticket = ProcessIncidentBundleJob::createTicket($sessionId);
+            $this->trace('callback.ticket_creation.completed', ['session_id' => $sessionId, 'ticket_created' => $ticket !== null]);
             if ($ticket) {
                 $assignee = $ticket->assignee;
                 $deliveryWarning = ($assignee && ! $assignee->assignee_chat_id)

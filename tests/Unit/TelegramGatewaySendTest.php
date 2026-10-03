@@ -4,12 +4,16 @@ namespace Tests\Unit;
 
 use App\Services\AssigneeNotificationService;
 use App\Services\TelegramBotService;
+use App\Services\TelegramWebhookObservability;
+use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
 use Tests\TestCase;
 
 class TelegramGatewaySendTest extends TestCase
 {
+    use RefreshDatabase;
+
     protected function setUp(): void
     {
         parent::setUp();
@@ -81,6 +85,33 @@ class TelegramGatewaySendTest extends TestCase
                 default => false,
             };
         });
+    }
+
+    public function test_gateway_trace_distinguishes_callback_deletion_and_send_durations(): void
+    {
+        $observability = app(TelegramWebhookObservability::class);
+        $trace = $observability->begin(['update_id' => 123, 'callback_query' => []]);
+        Http::fake([
+            'https://gateway.test/answer-callback-query.php*' => Http::response(['ok' => true]),
+            'https://gateway.test/delete-message.php*' => Http::response(['ok' => true]),
+            'https://gateway.test/send*' => Http::response(['ok' => true, 'result' => ['message_id' => 91]]),
+        ]);
+
+        $service = app(TelegramBotService::class);
+        $service->answerCallbackQuery('callback-1');
+        $service->deleteMessage(1001, 91);
+        $service->sendMessage(1001, 'Done');
+
+        $events = $trace->events()->get();
+        $this->assertSame(
+            ['answer_callback_query', 'delete_message', 'send_message'],
+            $events->where('checkpoint', 'telegram.gateway.started')->pluck('metadata')->pluck('operation')->all(),
+        );
+        $responses = $events->where('checkpoint', 'telegram.gateway.responded')->pluck('metadata');
+        $this->assertSame(['answer_callback_query', 'delete_message', 'send_message'], $responses->pluck('operation')->all());
+        foreach ($responses as $response) {
+            $this->assertIsInt($response['duration_ms']);
+        }
     }
 
     public function test_file_resolution_and_raw_download_use_gateway_endpoints(): void

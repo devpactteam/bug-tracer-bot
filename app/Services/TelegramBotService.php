@@ -91,14 +91,25 @@ class TelegramBotService
         ]);
     }
 
-    private function traceTelegramGatewayResponse(string $url, int $status, array $payload): void
+    private function traceTelegramGatewayStarted(string $url, string $operation): void
+    {
+        if ($trace = $this->observability->current()) {
+            $this->observability->record($trace, 'telegram.gateway.started', [
+                'operation' => $operation,
+                'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
+            ]);
+        }
+    }
+
+    private function traceTelegramGatewayResponse(string $url, int $status, array $payload, string $operation, int $durationMs): void
     {
         if (! $trace = $this->observability->current()) {
             return;
         }
 
         $this->observability->record($trace, 'telegram.gateway.responded', [
-            'operation' => 'send_message',
+            'operation' => $operation,
+            'duration_ms' => $durationMs,
             'http_status' => $status,
             'telegram_ok' => (bool) ($payload['ok'] ?? false),
             'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
@@ -109,13 +120,13 @@ class TelegramBotService
     }
 
     /** The complete non-JSON body is kept only in the restricted daily log. */
-    private function traceInvalidTelegramGatewayResponse(string $url, int $status, string $body, ?string $contentType): void
+    private function traceInvalidTelegramGatewayResponse(string $url, int $status, string $body, ?string $contentType, string $operation): void
     {
         $trace = $this->observability->current();
         Log::channel('telegram-webhook')->error('telegram.gateway.invalid_json_response', [
             'correlation_id' => $trace?->correlation_id,
             'update_id' => $trace?->update_id,
-            'operation' => 'send_message',
+            'operation' => $operation,
             'http_status' => $status,
             'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
             'content_type' => $contentType,
@@ -123,7 +134,7 @@ class TelegramBotService
         ]);
         if ($trace) {
             $this->observability->record($trace, 'telegram.gateway.invalid_json', [
-                'operation' => 'send_message', 'http_status' => $status,
+                'operation' => $operation, 'http_status' => $status,
                 'gateway_host' => parse_url($url, PHP_URL_HOST) ?: 'invalid_or_relative_url',
                 'content_type' => $contentType, 'response_bytes' => strlen($body),
             ]);
@@ -141,6 +152,18 @@ class TelegramBotService
             'exception_class' => $exception::class,
             'exception_message' => $this->observability->safeError($exception->getMessage()),
         ]);
+    }
+
+    private function traceTelegramGatewayFailure(string $operation, \Throwable $exception, int $durationMs): void
+    {
+        if ($trace = $this->observability->current()) {
+            $this->observability->record($trace, 'telegram.gateway.failed', [
+                'operation' => $operation,
+                'duration_ms' => $durationMs,
+                'exception_class' => $exception::class,
+                'exception_message' => $this->observability->safeError($exception->getMessage()),
+            ]);
+        }
     }
 
     public function editMessage(string|int $chatId, string|int $messageId, string $text, ?array $replyMarkup = null): array
