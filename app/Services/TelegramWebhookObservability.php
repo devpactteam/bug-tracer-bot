@@ -14,10 +14,15 @@ class TelegramWebhookObservability
     public function begin(array $update): TelegramWebhookTrace
     {
         $type = isset($update['callback_query']) ? 'callback_query' : (isset($update['message']) ? 'message' : null);
+        $sender = $update['message']['from'] ?? $update['callback_query']['from'] ?? [];
+        $sender = is_array($sender) ? $sender : [];
+        $senderId = $sender['id'] ?? null;
         $trace = TelegramWebhookTrace::query()->create([
             'correlation_id' => (string) str()->uuid(),
             'update_id' => isset($update['update_id']) ? (int) $update['update_id'] : null,
             'update_type' => $type,
+            'sender_username' => is_string($sender['username'] ?? null) ? $sender['username'] : null,
+            'sender_telegram_id' => is_int($senderId) || (is_string($senderId) && ctype_digit($senderId)) ? (int) $senderId : null,
         ]);
         $this->record($trace, 'request.received', ['update_keys' => array_keys($update), 'update_type' => $type]);
 

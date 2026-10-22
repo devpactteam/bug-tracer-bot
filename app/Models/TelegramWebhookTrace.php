@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class TelegramWebhookTrace extends Model
 {
-    protected $fillable = ['correlation_id', 'update_id', 'update_type', 'outcome', 'latest_checkpoint', 'session_id', 'failure_class', 'failure_message', 'completed_at'];
+    protected $fillable = ['correlation_id', 'update_id', 'update_type', 'sender_username', 'sender_telegram_id', 'outcome', 'latest_checkpoint', 'session_id', 'failure_class', 'failure_message', 'completed_at'];
 
     protected function casts(): array
     {
