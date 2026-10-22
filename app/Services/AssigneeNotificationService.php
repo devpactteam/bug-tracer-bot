@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\IncidentTicket;
+use App\Models\IncidentTicketLog;
 use App\Models\SupportUser;
 use App\Services\Concerns\SendsTelegramViaGateway;
 use Illuminate\Http\Client\PendingRequest;
@@ -50,11 +51,19 @@ class AssigneeNotificationService
         //     'reply_markup' => $replyMarkup ? json_encode($replyMarkup, JSON_THROW_ON_ERROR) : null,
         // ]))->throw()->json();
 
+        $result = $this->sendTelegramMessage(
+            $text,
+            $chatId,
+            (string) config('incident.assignee_bot.token'),
+            $replyMarkup,
+        );
+
         return [
-            'ok' => $this->sendTelegram($text, $chatId, (string) config('incident.assignee_bot.token')),
-            // The supplied gateway contract only returns a success status; it
-            // does not provide Telegram's message_id or inline-keyboard API.
-            'result' => [],
+            'ok' => (bool) ($result['ok'] ?? false),
+            // The supplied gateway contract does not guarantee Telegram's
+            // message_id even when it accepts the request.
+            'result' => is_array($result['result'] ?? null) ? $result['result'] : [],
+            'delivery_error' => $this->deliveryFailureSummary($result, 'درگاه تلگرام'),
         ];
     }
 
@@ -85,14 +94,30 @@ class AssigneeNotificationService
      */
     private function sendTicketPhotos(IncidentTicket $ticket, SupportUser $assignee): void
     {
-        foreach ($ticket->photoPaths() as $path) {
+        foreach ($ticket->photoPaths() as $index => $path) {
+            $log = $this->beginTicketDelivery($ticket, 'photo', $assignee->name, $index + 1);
+
             try {
-                $this->sendPhoto(
+                $result = $this->sendPhoto(
                     $assignee->assignee_chat_id,
                     $path,
                     '📎 تصویر پیوست تیکت '.$ticket->ticket_number
                 );
+
+                $accepted = (bool) ($result['ok'] ?? false);
+                $this->finishTicketDelivery(
+                    $log,
+                    $accepted ? 'accepted' : 'failed',
+                    $accepted ? null : $this->deliveryFailureSummary($result, 'تلگرام'),
+                    $index + 1,
+                );
             } catch (\Throwable $exception) {
+                $this->finishTicketDelivery(
+                    $log,
+                    'failed',
+                    $this->deliveryExceptionSummary($exception, 'ارسال عکس در تلگرام'),
+                    $index + 1,
+                );
                 report($exception);
             }
         }
@@ -521,7 +546,10 @@ class AssigneeNotificationService
             // (e.g. created before this user /started the bot).
             $undelivered = IncidentTicket::query()
                 ->where('assignee_id', $user->id)
-                ->whereNull('assignee_message_id')
+                ->whereDoesntHave('ticketLogs', fn ($query) => $query
+                    ->where('action', 'telegram_delivery')
+                    ->where('from_value', 'message')
+                    ->where('to_value', 'accepted'))
                 ->whereIn('status', ['open', 'in_progress'])
                 ->orderBy('id')
                 ->get();
@@ -551,19 +579,162 @@ class AssigneeNotificationService
      */
     public function notifyAssignee(IncidentTicket $ticket, ?SupportUser $assignee): bool
     {
+        $assigneeName = $assignee?->name;
+        $log = $this->beginTicketDelivery($ticket, 'message', $assigneeName);
+
         if (! $assignee || ! $assignee->assignee_chat_id) {
+            $this->finishTicketDelivery(
+                $log,
+                'skipped',
+                'مسئول تیکت یا شناسه گفت‌وگوی تلگرام تنظیم نشده است.',
+            );
+
             return false;
         }
 
-        $sent = $this->sendMessage(
-            $assignee->assignee_chat_id,
-            $this->ticketMessageText($ticket, $assignee),
-            $this->ticketProgressKeyboard($ticket->id)
+        try {
+            $sent = $this->sendMessage(
+                $assignee->assignee_chat_id,
+                $this->ticketMessageText($ticket, $assignee),
+                $this->ticketProgressKeyboard($ticket->id)
+            );
+        } catch (\Throwable $exception) {
+            $this->finishTicketDelivery(
+                $log,
+                'failed',
+                $this->deliveryExceptionSummary($exception, 'ارسال پیام از طریق درگاه تلگرام'),
+            );
+            throw $exception;
+        }
+
+        $accepted = (bool) ($sent['ok'] ?? false);
+        $this->finishTicketDelivery(
+            $log,
+            $accepted ? 'accepted' : 'failed',
+            $accepted ? null : ($sent['delivery_error'] ?? 'درگاه تلگرام ارسال را تأیید نکرد.'),
         );
-        $ticket->update(['assignee_message_id' => $sent['result']['message_id'] ?? null]);
+        $ticket->update([
+            'assignee_message_id' => $accepted
+                ? ($sent['result']['message_id'] ?? null)
+                : null,
+        ]);
+
         $this->sendTicketPhotos($ticket, $assignee);
 
-        return true;
+        return $accepted;
+    }
+
+    private function beginTicketDelivery(
+        IncidentTicket $ticket,
+        string $itemType,
+        ?string $assigneeName,
+        ?int $itemNumber = null,
+    ): IncidentTicketLog {
+        return $ticket->log(
+            'telegram_delivery',
+            $this->ticketDeliveryDescription($itemType, 'attempted', null, $itemNumber),
+            $assigneeName ?: 'مسئول مشخص‌نشده',
+            $itemType,
+            'attempted',
+        );
+    }
+
+    private function finishTicketDelivery(
+        IncidentTicketLog $log,
+        string $outcome,
+        ?string $summary = null,
+        ?int $itemNumber = null,
+    ): void {
+        $log->update([
+            'description' => $this->ticketDeliveryDescription(
+                (string) $log->from_value,
+                $outcome,
+                $summary,
+                $itemNumber,
+            ),
+            'to_value' => $outcome,
+        ]);
+    }
+
+    private function ticketDeliveryDescription(
+        string $itemType,
+        string $outcome,
+        ?string $summary,
+        ?int $itemNumber,
+    ): string {
+        $item = $itemType === 'photo'
+            ? 'تصویر پیوست'.($itemNumber ? ' شماره '.$itemNumber : '')
+            : 'پیام تیکت';
+        $outcomeText = match ($outcome) {
+            'accepted' => 'ارسال توسط سرویس تلگرام پذیرفته شد',
+            'failed' => 'ارسال ناموفق بود',
+            'skipped' => 'ارسال انجام نشد',
+            default => 'ارسال در حال انجام است',
+        };
+
+        return trim($item.' — '.$outcomeText.($summary ? ': '.$summary : '').'.');
+    }
+
+    private function deliveryFailureSummary(array $result, string $transport): string
+    {
+        $reason = $this->knownTelegramFailureReason($result['description'] ?? null);
+        $errorCode = filter_var($result['error_code'] ?? null, FILTER_VALIDATE_INT);
+        if ($errorCode !== false) {
+            return 'کد خطای تلگرام: '.$errorCode.($reason ? ' — '.$reason : '').'.';
+        }
+        if ($reason !== null) {
+            return $reason.'.';
+        }
+
+        $exception = $result['delivery_error'] ?? null;
+        if (is_string($exception) && preg_match('/^HTTP \d{3}$/', $exception)) {
+            return $transport.' ناموفق بود ('.$exception.').';
+        }
+        if (is_string($exception) && preg_match('/^[A-Za-z0-9_]+$/', $exception)) {
+            return 'درخواست '.$transport.' ناموفق بود ('.$exception.').';
+        }
+
+        return $transport.' ارسال را تأیید نکرد.';
+    }
+
+    private function deliveryExceptionSummary(\Throwable $exception, string $transport): string
+    {
+        if ($exception instanceof RequestException) {
+            $payload = $exception->response->json();
+            $reason = is_array($payload)
+                ? $this->knownTelegramFailureReason($payload['description'] ?? null)
+                : null;
+
+            return $transport.' ناموفق بود (HTTP '.$exception->response->status()
+                .($reason ? ' — '.$reason : '').').';
+        }
+
+        return $transport.' ناموفق بود ('.class_basename($exception).').';
+    }
+
+    private function knownTelegramFailureReason(mixed $description): ?string
+    {
+        if (! is_string($description)) {
+            return null;
+        }
+
+        $description = mb_strtolower($description);
+        foreach ([
+            'bot was blocked by the user' => 'کاربر ربات را مسدود کرده است',
+            "bot can't initiate conversation with a user" => 'کاربر باید ابتدا گفتگو با ربات را آغاز کند',
+            'chat not found' => 'گفتگوی تلگرام پیدا نشد',
+            'user is deactivated' => 'حساب کاربر غیرفعال است',
+            'not enough rights to send' => 'ربات مجوز ارسال در این گفتگو را ندارد',
+            'message is too long' => 'متن پیام از محدودیت تلگرام بلندتر است',
+            "can't parse entities" => 'قالب‌بندی پیام توسط تلگرام پذیرفته نشد',
+            'file is too big' => 'حجم فایل از محدودیت تلگرام بیشتر است',
+        ] as $needle => $safeReason) {
+            if (str_contains($description, $needle)) {
+                return $safeReason;
+            }
+        }
+
+        return null;
     }
 
     public function ticketProgressKeyboard(int $ticketId): array

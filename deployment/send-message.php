@@ -74,6 +74,27 @@ function gatewayValue(array $input, string ...$keys): mixed
     return null;
 }
 
+function gatewayCurlTimings(array $info): array
+{
+    $seconds = static fn (string $key): float => isset($info[$key]) ? (float) $info[$key] : 0.0;
+    $milliseconds = static fn (float $value): int => (int) round(max(0, $value) * 1000);
+    $dns = $seconds('namelookup_time');
+    $connect = $seconds('connect_time');
+    $tls = $seconds('appconnect_time');
+    $pretransfer = $seconds('pretransfer_time');
+    $firstByte = $seconds('starttransfer_time');
+    $total = $seconds('total_time');
+
+    return [
+        'dns_ms' => $milliseconds($dns),
+        'tcp_connect_ms' => $milliseconds($connect - $dns),
+        'tls_handshake_ms' => $milliseconds($tls - $connect),
+        'request_to_first_byte_ms' => $milliseconds($firstByte - $pretransfer),
+        'response_download_ms' => $milliseconds($total - $firstByte),
+        'total_ms' => $milliseconds($total),
+    ];
+}
+
 function gatewayJson(int $status, array $payload): never
 {
     gatewayLog('response.sent', [
@@ -122,6 +143,7 @@ function gatewayTelegram(string $token, string $method, array $parameters): neve
     ]);
     $response = curl_exec($curl);
     $error = curl_error($curl);
+    $curlInfo = curl_getinfo($curl);
     $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
     curl_close($curl);
 
@@ -129,6 +151,7 @@ function gatewayTelegram(string $token, string $method, array $parameters): neve
         gatewayLog('telegram.request.failed', [
             'telegram_method' => $method,
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'curl_timing' => gatewayCurlTimings($curlInfo),
             'curl_error' => $error !== '' ? str_replace($token, '[redacted]', $error) : 'unknown',
         ]);
         gatewayJson(502, ['ok' => false, 'description' => $error ?: 'Telegram request failed.']);
@@ -137,6 +160,7 @@ function gatewayTelegram(string $token, string $method, array $parameters): neve
         'telegram_method' => $method,
         'status' => $status,
         'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        'curl_timing' => gatewayCurlTimings($curlInfo),
         'response_bytes' => strlen($response),
     ]);
     gatewayLog('response.sent', [

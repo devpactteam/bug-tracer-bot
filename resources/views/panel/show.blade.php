@@ -89,6 +89,7 @@
                     'resolution_started' => ['📝', 'شروع پرسش‌نامه رفع', 'resolution'],
                     'note_answer' => ['💬', 'پاسخ به پرسش', 'answer'],
                     'assigned_to' => ['🔄', 'انتقال به مسئول دیگر', 'assigned'],
+                    'telegram_delivery' => ['📨', 'ارسال به تلگرام', 'telegram-delivery'],
                     'closed' => ['✅', 'بسته شدن تیکت', 'closed'],
                     default => ['📄', (string) $action, ''],
                 };
@@ -134,8 +135,20 @@
                                     <span class="arrow">←</span>
                                     <span class="chip">{{ $log->to_value }}</span>
                                 @endif
+                                @if ($log->action === 'telegram_delivery')
+                                    <span class="chip">{{ $log->from_value === 'photo' ? 'تصویر پیوست' : 'پیام تیکت' }}</span>
+                                    <span class="chip">{{ match ($log->to_value) {
+                                        'attempted' => 'در حال ارسال',
+                                        'accepted' => 'پذیرفته‌شده توسط سرویس تلگرام',
+                                        'failed' => 'ناموفق',
+                                        'skipped' => 'انجام‌نشده',
+                                        default => $log->to_value,
+                                    } }}</span>
+                                @endif
                                 @if ($log->actor)
-                                    <span class="chip actor">👤 {{ $log->actor }}</span>
+                                    <span class="chip actor">
+                                        {{ $log->action === 'telegram_delivery' ? 'گیرنده' : '👤' }} {{ $log->actor }}
+                                    </span>
                                 @endif
                             </div>
                         </div>

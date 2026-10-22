@@ -65,6 +65,8 @@ function relayLog(string $step, array $context = []): void
     }
 }
 
+relayLog('start ...');
+
 function relayJson(int $status, array $payload): never
 {
     relayLog('response.sent', [
@@ -88,6 +90,27 @@ function relayHeader(string $name): string
 function relayConstantOrEnv(string $constant, string $env, string $default = ''): string
 {
     return defined($constant) ? (string) constant($constant) : relayConfig($env, $default);
+}
+
+function relayCurlTimings(array $info): array
+{
+    $seconds = static fn (string $key): float => isset($info[$key]) ? (float) $info[$key] : 0.0;
+    $milliseconds = static fn (float $value): int => (int) round(max(0, $value) * 1000);
+    $dns = $seconds('namelookup_time');
+    $connect = $seconds('connect_time');
+    $tls = $seconds('appconnect_time');
+    $pretransfer = $seconds('pretransfer_time');
+    $firstByte = $seconds('starttransfer_time');
+    $total = $seconds('total_time');
+
+    return [
+        'dns_ms' => $milliseconds($dns),
+        'tcp_connect_ms' => $milliseconds($connect - $dns),
+        'tls_handshake_ms' => $milliseconds($tls - $connect),
+        'request_to_first_byte_ms' => $milliseconds($firstByte - $pretransfer),
+        'response_download_ms' => $milliseconds($total - $firstByte),
+        'total_ms' => $milliseconds($total),
+    ];
 }
 
 function relayForward(string $url, string $body, array $headers, int $timeout): array
@@ -119,6 +142,7 @@ function relayForward(string $url, string $body, array $headers, int $timeout): 
 
     $response = curl_exec($curl);
     $error = curl_error($curl);
+    $curlInfo = curl_getinfo($curl);
     $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
     $headerSize = (int) curl_getinfo($curl, CURLINFO_HEADER_SIZE);
     curl_close($curl);
@@ -126,6 +150,7 @@ function relayForward(string $url, string $body, array $headers, int $timeout): 
     if ($response === false) {
         relayLog('laravel.request.failed', [
             'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+            'curl_timing' => relayCurlTimings($curlInfo),
             'curl_error' => $error !== '' ? $error : 'unknown',
         ]);
         throw new RuntimeException($error !== '' ? $error : 'Relay request failed.');
@@ -134,6 +159,7 @@ function relayForward(string $url, string $body, array $headers, int $timeout): 
     relayLog('laravel.response.received', [
         'status' => $status,
         'duration_ms' => (int) round((microtime(true) - $startedAt) * 1000),
+        'curl_timing' => relayCurlTimings($curlInfo),
         'response_bytes' => strlen($response) - $headerSize,
     ]);
 

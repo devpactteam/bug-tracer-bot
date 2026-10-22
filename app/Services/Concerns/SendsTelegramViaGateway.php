@@ -47,7 +47,13 @@ trait SendsTelegramViaGateway
                 $this->traceTelegramGatewayException($exception);
             }
 
-            return ['ok' => false, 'result' => []];
+            return [
+                'ok' => false,
+                'result' => [],
+                'delivery_error' => $exception instanceof \Illuminate\Http\Client\RequestException
+                    ? 'HTTP '.$exception->response->status()
+                    : class_basename($exception),
+            ];
         }
     }
 
