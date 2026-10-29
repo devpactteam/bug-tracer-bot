@@ -6,10 +6,21 @@ use App\Contracts\AiIncidentAnalysisInterface;
 use App\Services\FakeAiAnalysisService;
 use App\Services\OpenAiAnalysisService;
 use App\Services\TelegramWebhookObservability;
+use Illuminate\Support\Facades\URL;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
+    public function boot(): void
+    {
+        // A TLS-terminating proxy can make Laravel see the origin connection
+        // as HTTP unless its address is listed in TRUSTED_PROXIES. Keep
+        // generated form actions and links on HTTPS in forced-HTTPS installs.
+        if (config('app.force_https')) {
+            URL::forceScheme('https');
+        }
+    }
+
     public function register(): void
     {
         // A webhook controller, its handler, and Telegram services must share
